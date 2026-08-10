@@ -6,7 +6,7 @@ import type { ArrivalBus, ArrivalService, BusStop, Load } from './types.js';
  *
  * Endpoint paths and field names below follow the DataMall API user guide;
  * verify them against the current guide when you activate the account, since
- * LTA has revised field sets before (BusArrival -> BusArrivalv2).
+ * LTA has revised paths before (BusArrival -> BusArrivalv2 -> v3/BusArrival).
  */
 
 const PAGE_SIZE = 500;
@@ -120,7 +120,7 @@ const toBus = (raw: RawBus | undefined): ArrivalBus | null => {
 };
 
 export const fetchArrivals = async (stopCode: string): Promise<ArrivalService[]> => {
-  const body = (await request('BusArrivalv2', { BusStopCode: stopCode })) as {
+  const body = (await request('v3/BusArrival', { BusStopCode: stopCode })) as {
     Services?: RawService[];
   };
 

@@ -26,7 +26,7 @@ convenience for capability, the default answer is no. Concretely:
 - Express 4 — the only runtime dependency
 - Frontend: hand-written HTML/CSS/JS in [public/](public/). No framework, no
   bundler, no build step. Keep it that way unless the maintainer says otherwise.
-- Upstream data: LTA DataMall (`BusStops`, `BusArrivalv2`)
+- Upstream data: LTA DataMall (`BusStops`, `v3/BusArrival`)
 
 ## Commands
 
@@ -169,5 +169,5 @@ image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
   under it, including `dist/index.js`, which binds :8080 and never exits. That
   is why `npm test` passes the explicit `dist/**/*.test.js` pattern instead.
 - Field names and endpoint paths follow the DataMall user guide. LTA has
-  revised them before (`BusArrival` → `BusArrivalv2`); check the current guide
-  against `lta.ts` when activating a real account.
+  revised them twice (`BusArrival` → `BusArrivalv2` → `v3/BusArrival`); check
+  the current guide against `lta.ts` when activating a real account.
