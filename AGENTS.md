@@ -43,6 +43,17 @@ There is no test suite, linter or formatter in this repo. Do not invent
 `npm test` or `npm run lint` in docs, CI or commit messages. If you add one,
 say so explicitly and wire it into `package.json`.
 
+Known gap, recorded deliberately (10 Aug 2026): the DataMall activation work in
+[docs/datamall-activation.md](docs/datamall-activation.md) adds negative
+caching, per-key backoff, a circuit breaker, a global token bucket and a
+deadline race to [src/cache.ts](src/cache.ts) and [src/lta.ts](src/lta.ts).
+That is concurrency-sensitive code whose failure mode is silent — a broken
+cache does not error, it just hammers upstream — and `curl` cannot really
+verify it. A minimal `node:test` suite covering `cache.ts` and the rate limiter
+is the intended follow-up; it was consciously deferred, not overlooked. Until
+then, exercise those paths against a stub `LTA_BASE_URL` that returns empty
+bodies and 429s rather than trusting a happy-path check.
+
 ## Verifying a change
 
 Since there are no tests, verify by running it:
