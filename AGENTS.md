@@ -41,9 +41,9 @@ LTA_ACCOUNT_KEY=... npm start   # against the real DataMall API
 ```
 
 There is a test suite, and its scope is deliberately narrow: the
-concurrency-sensitive code in [src/cache.ts](src/cache.ts) and the backoff /
-circuit-breaker state machines in `src/limiter.ts` (which arrives with tasks 4
-and 5 of the activation plan, and brings its own tests), whose failure mode is
+concurrency-sensitive code in [src/cache.ts](src/cache.ts) and the state
+machines in [src/limiter.ts](src/limiter.ts) — `Backoff` now, the circuit
+breaker with task 5 of the activation plan — whose failure mode is
 silent — a broken cache does not error, it just hammers upstream — so `curl`
 cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
 with everything else, and use an injected clock; do not write a test that
@@ -114,9 +114,15 @@ public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
   failed stop maps to `null` rather than failing the board. `null` is failure
   only: a stop with nothing running — DataMall returns no body at all outside
   operating hours — maps to `[]`, and the two must stay distinguishable.
-- [src/cache.ts](src/cache.ts) — TTL cache with in-flight de-duplication and
-  stale-on-error. Both properties are load-bearing; read the comment before
-  changing it.
+- [src/cache.ts](src/cache.ts) — TTL cache with in-flight de-duplication,
+  stale-on-error and per-key backoff on failure (a `Backoff` from
+  [src/limiter.ts](src/limiter.ts)). All three properties are load-bearing;
+  read the comment before changing it. On failure the entry is re-stamped to
+  expire exactly when the backoff window does, so serving stale and refusing to
+  retry are one deadline rather than two.
+- [src/limiter.ts](src/limiter.ts) — the rate-limiting state machines, kept
+  apart from their callers because they are pure state plus an injected clock.
+  `Backoff` today; the circuit breaker joins it in task 5.
 - [src/lta.ts](src/lta.ts) — DataMall client and response mapping
 - [src/mock.ts](src/mock.ts) — synthetic stops and timings for mock mode
 - [src/config.ts](src/config.ts) — all env reading happens here, nowhere else
