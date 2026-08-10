@@ -22,11 +22,84 @@ class DataMallError extends Error {
   }
 }
 
+const WINDOW_SECONDS = 60;
+
+/**
+ * Cumulative and trailing-60s upstream call counts.
+ *
+ * The trailing window is one bucket per second rather than one entry per call:
+ * an array of every call timestamp since boot grows without bound, and even a
+ * pruned one peaks at one entry per call in flight. This holds at most 60
+ * objects whatever the traffic, and one-second resolution is far finer than
+ * anything a readiness probe reads it at.
+ *
+ * `now` is injectable so the window can be tested without sleeping, matching
+ * `TtlCache`.
+ */
+export class RollingCounter {
+  #total = 0;
+  #buckets: { second: number; count: number }[] = [];
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  record(): void {
+    this.#total += 1;
+    const second = Math.floor(this.now() / 1000);
+    const last = this.#buckets.at(-1);
+    if (last?.second === second) last.count += 1;
+    else this.#buckets.push({ second, count: 1 });
+    this.#prune(second);
+  }
+
+  get total(): number {
+    return this.#total;
+  }
+
+  /** Calls recorded in the trailing 60s, pruned on read so an idle process decays. */
+  perMinute(): number {
+    const second = Math.floor(this.now() / 1000);
+    this.#prune(second);
+    return this.#buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+  }
+
+  #prune(second: number): void {
+    const cutoff = second - WINDOW_SECONDS;
+    this.#buckets = this.#buckets.filter((bucket) => bucket.second > cutoff);
+  }
+}
+
+const calls = new RollingCounter();
+
+/**
+ * Task 5 repoints this at the circuit breaker's own state; the field is on
+ * `/healthz` now so the payload shape is settled before the breaker exists.
+ * No breaker is installed, so nothing is ever being blocked — `false` is a
+ * true statement about the client as it stands, not a placeholder.
+ */
+const breakerOpen = (): boolean => false;
+
+/** Read side of the upstream counters, shaped for the `/healthz` payload. */
+export const upstreamStats = (): {
+  upstreamCalls: number;
+  upstreamCallsPerMin: number;
+  breakerOpen: boolean;
+} => ({
+  upstreamCalls: calls.total,
+  upstreamCallsPerMin: calls.perMinute(),
+  breakerOpen: breakerOpen(),
+});
+
 const request = async (path: string, params: Record<string, string> = {}): Promise<unknown> => {
   if (!config.accountKey) throw new DataMallError('no AccountKey configured');
 
   const url = new URL(`${config.baseUrl}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  // Counted here rather than at the call sites, so arrivals and the BusStops
+  // pull are both covered and a cache hit — which never reaches this function —
+  // is correctly not counted. The attempt is what costs the account, so a 429
+  // or a 500 counts exactly like a 200.
+  calls.record();
 
   const res = await fetch(url, {
     headers: { AccountKey: config.accountKey, accept: 'application/json' },

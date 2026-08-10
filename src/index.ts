@@ -3,6 +3,7 @@ import express from 'express';
 
 import { arrivalsForMany } from './arrivals.js';
 import { config, mockMode } from './config.js';
+import { upstreamStats } from './lta.js';
 import { StopIndex } from './stops.js';
 import type { ArrivalsResponse, BoardResponse, BoardStop } from './types.js';
 
@@ -36,6 +37,11 @@ const parseCodes = (raw: unknown): string[] => {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
+/**
+ * Readiness, plus the only visibility we have into what the account is being
+ * charged for. Publicly reachable, so this stays at the level of "how much
+ * traffic" — nothing per-IP or per-stop belongs here.
+ */
 app.get('/healthz', (_req, res) => {
   const ready = stops.size > 0;
   res.status(ready ? 200 : 503).json({
@@ -43,6 +49,7 @@ app.get('/healthz', (_req, res) => {
     stops: stops.size,
     stopsLoadedAt: stops.loadedAt?.toISOString() ?? null,
     mock: mockMode,
+    ...upstreamStats(),
   });
 });
 

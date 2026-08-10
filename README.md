@@ -64,7 +64,7 @@ does not, so test on localhost or through the tunnel.
 
 | Route | Notes |
 | --- | --- |
-| `GET /healthz` | Readiness, stop count, mock flag |
+| `GET /healthz` | Readiness, stop count, mock flag, and upstream call counters (`upstreamCalls` since boot, `upstreamCallsPerMin` over the trailing 60 s, `breakerOpen`). Publicly reachable, so it stays at the level of traffic volume — nothing per-IP or per-stop |
 | `GET /api/board?lat=&lon=&limit=&pinned=` | The whole page in one call: nearest stops (plus pinned) with arrivals attached. `no-store`, not logged. Missing or out-of-range coordinates return `located: false` and only the pinned stops |
 | `GET /api/arrivals?stops=a,b,c` | Refresh path. Arrivals only, for the cards the client can see |
 | `GET /api/stops?q=` | Search fallback, by code, description or road |

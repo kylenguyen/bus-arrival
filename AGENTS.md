@@ -73,7 +73,13 @@ timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
 1. `npm run build` — must pass clean. `strict` and `noUncheckedIndexedAccess`
    are on; do not silence errors with `any` or `!`.
 2. `npm start`, then `curl -s localhost:8080/healthz` — expect
-   `{"ok":true,...,"mock":true}` once the stop list has loaded.
+   `{"ok":true,...,"mock":true}` once the stop list has loaded. The same payload
+   carries `upstreamCalls` (cumulative since boot), `upstreamCallsPerMin`
+   (trailing 60 s) and `breakerOpen`. All three come from `upstreamStats()` in
+   [src/lta.ts](src/lta.ts) and are the only visibility into account spend, so
+   any change to upstream call volume is checked here. In mock mode the counts
+   stay `0` forever: mock mode never enters `request()`, which is where they
+   are incremented.
 3. Exercise the endpoint you touched, e.g.
    `curl -s 'localhost:8080/api/board?lat=1.3521&lon=103.8198&limit=3'`.
 4. For frontend changes, open `http://localhost:8080` and check the board in a
@@ -145,7 +151,11 @@ Container is a three-stage build ([Dockerfile](Dockerfile)) running as `node`
 with a read-only root filesystem. Kubernetes manifests are in
 [k8s/bus-arrival.yaml](k8s/bus-arrival.yaml): readiness hits `/healthz`,
 liveness is a deliberate TCP check so a DataMall outage does not restart-loop a
-pod that is still serving cached timings.
+pod that is still serving cached timings. `/healthz` is also the account-spend
+gauge (`upstreamCalls`, `upstreamCallsPerMin`, `breakerOpen`) and is publicly
+reachable: exposing rough traffic volume is accepted, anything per-IP or
+per-stop is not. Probing it costs nothing upstream — only `request()` in
+`lta.ts` increments, so readiness polling never inflates the numbers.
 
 Note a discrepancy to resolve with the maintainer before relying on it: the
 manifest comments reference a CI workflow at `.github/workflows/bus-arrival.yml`
