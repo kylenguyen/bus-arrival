@@ -16,12 +16,19 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        # Explicit uid/gid rather than trusting the image's `USER node`: without
+        # these, runAsNonRoot only fails *after* the kubelet resolves the image,
+        # and a future base-image change to root would break the pod at admission
+        # time instead of here. 1000 is `node` in node:22-slim.
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: bus-arrival
         # Built and pushed by .github/workflows/bus-arrival.yml on every push to
-        # main that touches apps/bus-arrival. Deploy a new build with:
+        # main. Multi-arch (amd64 + arm64), so the same tag runs on an Apple
+        # Silicon k3s VM and an x86 node. Deploy a new build with:
         #   kubectl rollout restart deployment/bus-arrival
         # Roll back by pinning the SHA tag that workflow also pushes:
         #   kubectl set image deployment/bus-arrival bus-arrival=ghcr.io/kylenguyen/bus-arrival:<sha>
@@ -89,14 +96,33 @@ spec:
       targetPort: 8080
 ---
 # Own hostname, so no stripPrefix or trailing-slash middleware is needed and
-# asset paths resolve against the root. Requires bus.kylen.dev (or a wildcard
-# *.kylen.dev) as a CNAME to the tunnel.
+# asset paths resolve against the root.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: bus-arrival-ingress
 spec:
+  # k3s bundles Traefik as the only controller. Naming it explicitly instead of
+  # relying on the default-class annotation keeps the manifest working on a
+  # cluster where another controller was installed later and took the default.
+  ingressClassName: traefik
   rules:
+  # Local k3s: *.localhost resolves to 127.0.0.1 without touching /etc/hosts on
+  # macOS and every current browser, so this host works as soon as Traefik's
+  # LoadBalancer is reachable on port 80.
+  - host: bus.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bus-arrival-svc
+            port:
+              number: 80
+  # Public route via the tunnel. Requires bus.kylen.dev (or a wildcard
+  # *.kylen.dev) as a CNAME to it; harmless on a local cluster, where nothing
+  # ever sends that Host header.
   - host: bus.kylen.dev
     http:
       paths:
