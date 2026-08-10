@@ -15,18 +15,25 @@ export class TtlCache<T> {
   readonly #entries = new Map<string, Entry<T>>();
   readonly #inflight = new Map<string, Promise<T>>();
 
-  constructor(private readonly ttlMs: number) {}
+  /**
+   * `now` is injectable so the TTL can be tested without sleeping; production
+   * call sites pass one argument and get `Date.now`.
+   */
+  constructor(
+    private readonly ttlMs: number,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async fetch(key: string, loader: () => Promise<T>): Promise<T> {
     const cached = this.#entries.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached && cached.expiresAt > this.now()) return cached.value;
 
     const pending = this.#inflight.get(key);
     if (pending) return pending;
 
     const request = loader()
       .then((value) => {
-        this.#entries.set(key, { value, expiresAt: Date.now() + this.ttlMs });
+        this.#entries.set(key, { value, expiresAt: this.now() + this.ttlMs });
         return value;
       })
       .catch((err: unknown) => {

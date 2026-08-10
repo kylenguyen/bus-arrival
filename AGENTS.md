@@ -35,28 +35,40 @@ npm install
 npm run build      # tsc -p tsconfig.json -> dist/
 npm start          # node dist/index.js, http://localhost:8080
 npm run dev        # build + node --watch
+npm test           # build, then node --test over dist/**/*.test.js
 
 LTA_ACCOUNT_KEY=... npm start   # against the real DataMall API
 ```
 
-There is no test suite, linter or formatter in this repo. Do not invent
-`npm test` or `npm run lint` in docs, CI or commit messages. If you add one,
-say so explicitly and wire it into `package.json`.
+There is a test suite, and its scope is deliberately narrow: the
+concurrency-sensitive code in [src/cache.ts](src/cache.ts) and the backoff /
+circuit-breaker state machines in `src/limiter.ts` (which arrives with tasks 4
+and 5 of the activation plan, and brings its own tests), whose failure mode is
+silent — a broken cache does not error, it just hammers upstream — so `curl`
+cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
+with everything else, and use an injected clock; do not write a test that
+sleeps. Everything else in the repo is still verified by running it. There is
+no linter or formatter — do not invent `npm run lint`.
 
-Known gap, recorded deliberately (10 Aug 2026): the DataMall activation work in
-[docs/datamall-activation.md](docs/datamall-activation.md) adds negative
-caching, per-key backoff, a circuit breaker, a global token bucket and a
-deadline race to [src/cache.ts](src/cache.ts) and [src/lta.ts](src/lta.ts).
-That is concurrency-sensitive code whose failure mode is silent — a broken
-cache does not error, it just hammers upstream — and `curl` cannot really
-verify it. A minimal `node:test` suite covering `cache.ts` and the rate limiter
-is the intended follow-up; it was consciously deferred, not overlooked. Until
-then, exercise those paths against a stub `LTA_BASE_URL` that returns empty
-bodies and 429s rather than trusting a happy-path check.
+A committed DataMall stub lives at
+[tools/stub-datamall.mjs](tools/stub-datamall.mjs) (no dependencies, `node
+tools/stub-datamall.mjs`, port 9099). Point the app at it to leave mock mode:
+
+```sh
+LTA_ACCOUNT_KEY=stub-key LTA_BASE_URL=http://localhost:9099 node dist/index.js
+```
+
+Modes are `ok`, `empty` (zero-length body — the 01:30 case), `429` (with
+`Retry-After`), `500` (body carries a fake AccountKey, so you can grep the app
+log and prove we never echo one) and `slow`. Switch at runtime with
+`GET /_mode?set=429`; read the request counter, per-path counts and per-request
+timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
+`BusStops` always answers, so the pod still becomes ready. Add
+`ARRIVAL_TTL_MS=1` when measuring upstream call rate rather than caching.
 
 ## Verifying a change
 
-Since there are no tests, verify by running it:
+`npm test` covers the two modules above. Everything else, verify by running it:
 
 1. `npm run build` — must pass clean. `strict` and `noUncheckedIndexedAccess`
    are on; do not silence errors with `any` or `!`.
@@ -153,6 +165,9 @@ image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
 - The stop list loads *after* the port binds, so the container passes its
   startup probe even when DataMall is slow. `/healthz` returns 503 until the
   list is in.
+- `node --test dist/` hangs: given a directory, Node 24 executes *every* `.js`
+  under it, including `dist/index.js`, which binds :8080 and never exits. That
+  is why `npm test` passes the explicit `dist/**/*.test.js` pattern instead.
 - Field names and endpoint paths follow the DataMall user guide. LTA has
   revised them before (`BusArrival` → `BusArrivalv2`); check the current guide
   against `lta.ts` when activating a real account.
