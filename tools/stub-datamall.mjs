@@ -34,10 +34,17 @@
  * Control endpoints, all GET so they are one curl each. Any path starting with
  * `/_` is a control path and is deliberately NOT counted in the stats:
  *
- *   GET /_mode              -> {"mode":"ok"}
- *   GET /_mode?set=429      -> switches mode at runtime
- *   GET /_stats             -> {"total":N,"byPath":{...},"timestamps":[...]}
- *   GET /_stats?reset=1     -> clears the counters, then reports the empty set
+ *   GET /_mode                    -> {"mode":"ok","overrides":{}}
+ *   GET /_mode?set=429            -> switches the global mode at runtime
+ *   GET /_mode?set=500&code=10002 -> mode for one stop code only
+ *   GET /_mode?clear=10002        -> drops that override ('all' drops the lot)
+ *   GET /_stats                   -> {"total":N,"byPath":{...},"timestamps":[...]}
+ *   GET /_stats?reset=1           -> clears the counters, then reports the empty set
+ *
+ * Per-code overrides exist because the interesting checks are about telling two
+ * upstream states apart *inside one board request* — an empty stop next to a
+ * failing one — and a single global mode can only produce one of them at a time.
+ * A code with no override follows the global mode.
  *
  * `byPath` is keyed by pathname without the query string, so driving 25 stop
  * codes does not produce 25 keys. Every request is also logged to stdout with
@@ -55,6 +62,9 @@ const MODES = ['ok', 'empty', '429', '500', 'slow'];
 const FAKE_KEY = 'FAKEKEY-DO-NOT-ECHO-0123456789';
 
 let mode = MODES.includes(process.env.STUB_MODE ?? '') ? process.env.STUB_MODE : 'ok';
+
+/** Per-stop-code mode, consulted ahead of the global one. @type {Map<string, string>} */
+const overrides = new Map();
 
 let total = 0;
 /** @type {Map<string, number>} */
@@ -142,16 +152,29 @@ const server = createServer((req, res) => {
   // very numbers it is reading.
   if (pathname.startsWith('/_')) {
     if (pathname === '/_mode') {
+      const clear = url.searchParams.get('clear');
+      if (clear !== null) {
+        if (clear === 'all') overrides.clear();
+        else overrides.delete(clear);
+        console.log(`[stub] override cleared -> ${clear}`);
+      }
+
       const set = url.searchParams.get('set');
       if (set !== null) {
         if (!MODES.includes(set)) {
           json(res, 400, { error: `unknown mode ${set}`, modes: MODES });
           return;
         }
-        mode = set;
-        console.log(`[stub] mode -> ${mode}`);
+        const code = url.searchParams.get('code');
+        if (code === null) {
+          mode = set;
+          console.log(`[stub] mode -> ${mode}`);
+        } else {
+          overrides.set(code, set);
+          console.log(`[stub] mode for ${code} -> ${set}`);
+        }
       }
-      json(res, 200, { mode, modes: MODES });
+      json(res, 200, { mode, overrides: Object.fromEntries(overrides), modes: MODES });
       return;
     }
     if (pathname === '/_stats') {
@@ -188,7 +211,7 @@ const server = createServer((req, res) => {
   // Matches BusArrivalv2 and v3/BusArrival alike, so the stub survives task 1.
   if (pathname.includes('BusArrival')) {
     const stopCode = url.searchParams.get('BusStopCode') ?? '00000';
-    switch (mode) {
+    switch (overrides.get(stopCode) ?? mode) {
       case 'empty':
         // Zero-length body with a JSON content type: what the guide describes
         // outside operating hours, and what makes res.json() throw today.
@@ -229,7 +252,9 @@ const server = createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[stub] DataMall stub on http://localhost:${PORT} mode=${mode} delay=${DELAY_MS}ms`);
-  console.log(`[stub] control: /_mode /_mode?set=<${MODES.join('|')}> /_stats /_stats?reset=1`);
+  console.log(
+    `[stub] control: /_mode /_mode?set=<${MODES.join('|')}>[&code=<stop>] /_mode?clear=<stop|all> /_stats /_stats?reset=1`,
+  );
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

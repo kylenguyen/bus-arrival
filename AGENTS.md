@@ -61,7 +61,10 @@ LTA_ACCOUNT_KEY=stub-key LTA_BASE_URL=http://localhost:9099 node dist/index.js
 Modes are `ok`, `empty` (zero-length body — the 01:30 case), `429` (with
 `Retry-After`), `500` (body carries a fake AccountKey, so you can grep the app
 log and prove we never echo one) and `slow`. Switch at runtime with
-`GET /_mode?set=429`; read the request counter, per-path counts and per-request
+`GET /_mode?set=429`, or for a single stop code with
+`GET /_mode?set=500&code=10002` (`GET /_mode?clear=10002`, or `clear=all`, drops
+it again) — that is how one board request can carry two different upstream
+states at once. Read the request counter, per-path counts and per-request
 timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
 `BusStops` always answers, so the pod still becomes ready. Add
 `ARRIVAL_TTL_MS=1` when measuring upstream call rate rather than caching.
@@ -108,7 +111,9 @@ public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
   search and nearest-neighbour, refreshed daily. A few thousand rows, so no
   index and no database. Keep it that way.
 - [src/arrivals.ts](src/arrivals.ts) — per-stop arrivals, 5 at a time, one
-  failed stop maps to `null` rather than failing the board
+  failed stop maps to `null` rather than failing the board. `null` is failure
+  only: a stop with nothing running — DataMall returns no body at all outside
+  operating hours — maps to `[]`, and the two must stay distinguishable.
 - [src/cache.ts](src/cache.ts) — TTL cache with in-flight de-duplication and
   stale-on-error. Both properties are load-bearing; read the comment before
   changing it.

@@ -89,6 +89,16 @@ export const upstreamStats = (): {
   breakerOpen: breakerOpen(),
 });
 
+/**
+ * A 200 that carried no body at all. Outside operating hours DataMall answers
+ * with nothing — not `{}`, not an empty `Services` array, no attribute tags —
+ * so `res.json()` throws and a healthy API at 01:30 is indistinguishable from a
+ * broken one. Callers get this sentinel instead and decide what "nothing" means
+ * for their endpoint, because the answer differs: no arrivals is legitimate, no
+ * stop list is not.
+ */
+const EMPTY_BODY = Symbol('empty DataMall body');
+
 const request = async (path: string, params: Record<string, string> = {}): Promise<unknown> => {
   if (!config.accountKey) throw new DataMallError('no AccountKey configured');
 
@@ -110,7 +120,18 @@ const request = async (path: string, params: Record<string, string> = {}): Promi
     // Never surface the body — it can echo the key back in error responses.
     throw new DataMallError(`DataMall ${path} returned ${res.status}`, res.status);
   }
-  return res.json();
+
+  // Read as text, not `res.json()`: only a zero-length body is the benign
+  // non-operating-hours case. A body that is present but not JSON is upstream
+  // misbehaving and stays an error, so backoff and the breaker still see it.
+  const text = await res.text();
+  if (text.trim() === '') return EMPTY_BODY;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new DataMallError(`DataMall ${path} returned an unparseable body`, res.status);
+  }
 };
 
 interface RawStop {
@@ -142,10 +163,14 @@ export const fetchAllStops = async (): Promise<BusStop[]> => {
   const stops: BusStop[] = [];
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const body = (await request('BusStops', { $skip: String(page * PAGE_SIZE) })) as {
-      value?: RawStop[];
-    };
-    const batch = body.value ?? [];
+    const body = await request('BusStops', { $skip: String(page * PAGE_SIZE) });
+    // The stop feed has no non-operating hours, so an empty body here is a
+    // failure, not "there are no stops". Throwing keeps `stops.ts` on the
+    // previous list; returning what we have so far would silently truncate it
+    // mid-pagination, which no zero-length check downstream could catch.
+    if (body === EMPTY_BODY) throw new DataMallError('DataMall BusStops returned an empty body');
+
+    const batch = (body as { value?: RawStop[] }).value ?? [];
     for (const raw of batch) {
       const stop = toStop(raw);
       if (stop) stops.push(stop);
@@ -193,11 +218,14 @@ const toBus = (raw: RawBus | undefined): ArrivalBus | null => {
 };
 
 export const fetchArrivals = async (stopCode: string): Promise<ArrivalService[]> => {
-  const body = (await request('v3/BusArrival', { BusStopCode: stopCode })) as {
-    Services?: RawService[];
-  };
+  const body = await request('v3/BusArrival', { BusStopCode: stopCode });
+  // No body means no buses are running, which is a legitimate answer rather
+  // than a failure. It must map to `[]` so the caller can tell it apart from a
+  // failed call, and so task 4's backoff never treats a healthy 01:30 as an
+  // outage.
+  if (body === EMPTY_BODY) return [];
 
-  return (body.Services ?? [])
+  return ((body as { Services?: RawService[] }).Services ?? [])
     .map((service) => ({
       serviceNo: service.ServiceNo?.trim() ?? '',
       operator: service.Operator?.trim() ?? '',

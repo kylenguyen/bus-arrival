@@ -36,7 +36,13 @@ export interface BoardStop extends BusStop {
   /** Null when the visitor has not shared a location. */
   distanceM: number | null;
   pinned: boolean;
-  /** Null when this stop's upstream call failed; the rest of the board stands. */
+  /**
+   * Two different absences, and the difference is load-bearing:
+   * `[]` means the call succeeded and nothing is running — outside operating
+   * hours DataMall answers with no body at all — while `null` means the call
+   * itself failed and the rest of the board stands without this stop. Only
+   * `null` is a failure signal; backoff and the breaker must ignore `[]`.
+   */
   services: ArrivalService[] | null;
 }
 
@@ -48,6 +54,7 @@ export interface BoardResponse {
 }
 
 export interface ArrivalsResponse {
+  /** `services` splits empty from failed exactly as `BoardStop.services` does. */
   arrivals: Array<{ code: string; services: ArrivalService[] | null }>;
   fetchedAt: string;
   mock: boolean;

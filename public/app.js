@@ -187,7 +187,7 @@ function renderTags(bus) {
 function renderServices(stop) {
   if (stop.services === null) return '<p class="card-msg">Timings unavailable — will retry.</p>';
   if (stop.services.length === 0) {
-    return '<p class="card-msg">No buses running from this stop right now.</p>';
+    return '<p class="card-msg">No buses at this hour.</p>';
   }
 
   const rows = stop.services
