@@ -7,7 +7,9 @@ import { upstreamStats } from './lta.js';
 import { StopIndex } from './stops.js';
 import type { ArrivalsResponse, BoardResponse, BoardStop } from './types.js';
 
-const STOP_CODE = /^[A-Za-z0-9]{4,8}$/;
+/** DataMall documents BusStopCode as a 5-digit identifier. Junk is rejected
+ *  here rather than reaching the fan-out. */
+const STOP_CODE = /^\d{5}$/;
 
 /** Ceiling on stops per request, so one caller cannot fan out to the whole feed. */
 const MAX_STOPS = 25;
