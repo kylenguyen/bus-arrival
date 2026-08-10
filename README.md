@@ -1,0 +1,110 @@
+# Bus arrival board
+
+Live Singapore bus arrival times. Open the page, allow location once, and the
+15 nearest stops appear with what is coming, when, and how full it is. Nothing
+to sign up for and nothing to configure.
+
+Stops can be pinned (★) to keep them at the top of the board regardless of where
+you are. Pins and your last coordinate live in `localStorage`; the server stores
+nothing about anyone.
+
+Runs in **mock mode** until an LTA DataMall AccountKey is supplied, so the whole
+thing is deployable and demoable today. Mock mode only has 12 synthetic stops,
+so the board is shorter than 15 there.
+
+## The journey
+
+1. First visit: the browser asks for location. On HTTPS the grant is remembered
+   by the browser, so a returning visitor is never asked again.
+2. The nearest stops render in one request — stops and arrivals together.
+3. The coordinate is cached locally, so repeat visits paint the board before the
+   GPS fix comes back, and only re-rank if you have moved more than ~200 m.
+4. Refused or unavailable location: a search box appears instead. Searched stops
+   are pinned to the board.
+
+## Local run
+
+```sh
+npm install
+npm run build
+npm start           # http://localhost:8080, mock mode
+
+LTA_ACCOUNT_KEY=... npm start   # against the real API
+```
+
+Geolocation needs a secure context. `localhost` counts as one; a bare LAN IP
+does not, so test on localhost or through the tunnel.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `8080` | Listen port |
+| `LTA_ACCOUNT_KEY` | _unset_ | DataMall key. Unset ⇒ mock mode |
+| `ARRIVAL_TTL_MS` | `15000` | Arrival cache TTL |
+| `STOP_REFRESH_MS` | `86400000` | Stop-list reload interval |
+| `UPSTREAM_TIMEOUT_MS` | `8000` | DataMall request timeout |
+
+## Getting the API key
+
+1. Register for a DataMall account at LTA's developer portal and request an
+   AccountKey. It is free; approval is not instant.
+2. Put it in a Secret — do not commit it, and do not paste it into a chat:
+
+   ```sh
+   kubectl create secret generic lta-datamall --from-literal=accountKey='YOUR_KEY'
+   kubectl rollout restart deployment/bus-arrival
+   ```
+
+3. Once it works, drop `optional: true` from the `secretKeyRef` in
+   `k8s/bus-arrival.yaml` so a missing key fails loudly instead of silently
+   serving synthetic timings.
+
+## Endpoints
+
+| Route | Notes |
+| --- | --- |
+| `GET /healthz` | Readiness, stop count, mock flag |
+| `GET /api/board?lat=&lon=&limit=&pinned=` | The whole page in one call: nearest stops (plus pinned) with arrivals attached. `no-store`, not logged. Missing or out-of-range coordinates return `located: false` and only the pinned stops |
+| `GET /api/arrivals?stops=a,b,c` | Refresh path. Arrivals only, for the cards the client can see |
+| `GET /api/stops?q=` | Search fallback, by code, description or road |
+
+Both stop-list parameters are capped at 25 codes per request so a single caller
+cannot fan out across the whole feed.
+
+## Design notes
+
+- **Phone first.** This is read standing at a stop, so the phone layout is the
+  base stylesheet and the wide screen is the override. Each service is a
+  four-column row — number, then the next three buses — with every bus showing
+  its own crowding label, so occupancy for the bus after next is as readable as
+  for the one arriving. Below ~344 px the third bus is dropped rather than
+  letting the columns crush each other. Tap targets are 44 px, gutters follow
+  the safe-area insets, and the search input stays at 16 px so iOS does not
+  zoom the page on focus.
+- **One request per paint.** First load is a single `/api/board` call rather
+  than one call to rank stops and fifteen to fill them in. On the 30-second
+  refresh the client sends only the codes currently on screen (plus pinned
+  ones), so a long board does not cost a long board's worth of quota.
+- **No database.** The stop list is a few thousand rows; it is loaded into
+  memory on boot, refreshed daily, and both search and nearest-neighbour are
+  linear scans. Nothing to keep in sync.
+- **Quota safety.** DataMall is one request per stop, so a 15-stop board is 15
+  requests. They run 5 at a time, are cached for 15s with in-flight
+  de-duplication (concurrent viewers of a stop cost one upstream call), and a
+  stop whose call fails degrades to "timings unavailable" instead of blanking
+  the board. Background tabs stop polling entirely.
+- **Privacy.** Coordinates are used to rank stops and discarded; `/api/board`
+  sets `no-store` and nothing identifiable is logged. Keep it that way — once
+  other people use this, PDPA is in scope.
+
+## Before sharing the link
+
+- Verify the DataMall endpoint paths and field names in `src/lta.ts` against
+  the current DataMall API user guide. They follow the published v2 shape, but
+  LTA has revised field sets before and this code has only been exercised
+  against the mock.
+- Check DataMall's terms on redistributing their data before exposing
+  `/api/*` as a public API rather than as the UI's own backend.
+- Confirm your account's rate limit against the fan-out above and raise
+  `ARRIVAL_TTL_MS` if the board turns out to be too expensive.

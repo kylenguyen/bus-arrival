@@ -1,0 +1,84 @@
+import type { ArrivalService, BusStop } from './types.js';
+
+/**
+ * Synthetic stand-in for the DataMall BusStops feed, used only when no
+ * AccountKey is configured. Codes, names and coordinates here are made up to
+ * be plausible — do NOT treat them as the real stop list. Once the key is in
+ * place the real ~5,000-stop feed replaces this wholesale.
+ */
+export const MOCK_STOPS: BusStop[] = [
+  { code: '10001', roadName: 'Demo Ave 1', description: 'Blk 101', lat: 1.3521, lon: 103.8198 },
+  { code: '10009', roadName: 'Demo Ave 1', description: 'Opp Blk 101', lat: 1.3524, lon: 103.8201 },
+  { code: '10011', roadName: 'Demo Ave 2', description: 'Demo Stn Exit A', lat: 1.3489, lon: 103.8231 },
+  { code: '10019', roadName: 'Demo Ave 2', description: 'Demo Stn Exit B', lat: 1.3492, lon: 103.8237 },
+  { code: '20021', roadName: 'Sample Rd', description: 'Sample Mall', lat: 1.3005, lon: 103.8384 },
+  { code: '20029', roadName: 'Sample Rd', description: 'Opp Sample Mall', lat: 1.3009, lon: 103.8389 },
+  { code: '30031', roadName: 'Example Cres', description: 'Example Hawker Ctr', lat: 1.3212, lon: 103.8925 },
+  { code: '30039', roadName: 'Example Cres', description: 'Bef Example Hawker Ctr', lat: 1.3216, lon: 103.8931 },
+  { code: '40041', roadName: 'Placeholder St', description: 'Placeholder Poly', lat: 1.3762, lon: 103.8492 },
+  { code: '40049', roadName: 'Placeholder St', description: 'Aft Placeholder Poly', lat: 1.3767, lon: 103.8497 },
+  { code: '50051', roadName: 'Testbed Way', description: 'Testbed Interchange', lat: 1.4043, lon: 103.9021 },
+  { code: '60061', roadName: 'Fixture Link', description: 'Fixture Park', lat: 1.2903, lon: 103.8010 },
+];
+
+const SERVICES_BY_STOP: Record<string, string[]> = {
+  '10001': ['52', '167', '985'],
+  '10009': ['52', '167'],
+  '10011': ['74', '151', '154', '186'],
+  '10019': ['74', '151'],
+  '20021': ['36', '77', '106'],
+  '20029': ['36', '77'],
+  '30031': ['13', '31', '43'],
+  '30039': ['13', '31'],
+  '40041': ['66', '169', '900'],
+  '40049': ['66', '169'],
+  '50051': ['2', '24', '39', '168'],
+  '60061': ['5', '61'],
+};
+
+const OPERATORS = ['SBST', 'SMRT', 'TTS', 'GAS'];
+const LOADS = ['SEA', 'SEA', 'SDA', 'LSD'] as const;
+const TYPES = ['SD', 'DD', 'DD', 'BD'];
+
+/** Cheap deterministic hash so a given stop/service pair looks stable-ish. */
+const hash = (input: string): number => {
+  let h = 0;
+  for (let i = 0; i < input.length; i += 1) h = (h * 31 + input.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+/**
+ * Fabricates arrivals that actually tick down as the clock advances, so the
+ * frontend's refresh loop and relative-time rendering can be exercised
+ * properly without an upstream.
+ */
+export const mockArrivals = (stopCode: string, now = new Date()): ArrivalService[] => {
+  const services = SERVICES_BY_STOP[stopCode] ?? ['1', '2'];
+  const minuteOfDay = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+  return services.map((serviceNo) => {
+    const seed = hash(`${stopCode}:${serviceNo}`);
+    // Phase each service differently, then walk it with the clock so timings
+    // count down and wrap around instead of sitting frozen.
+    const headway = 6 + (seed % 9);
+    const phase = (seed + minuteOfDay) % headway;
+    const first = headway - phase;
+
+    const buses = [first, first + headway, first + headway * 2].map((offsetMin, index) => {
+      const at = new Date(now.getTime() + offsetMin * 60_000 + (seed % 60) * 1_000);
+      return {
+        estimatedArrival: at.toISOString(),
+        load: LOADS[(seed + index) % LOADS.length] ?? null,
+        wheelchairAccessible: seed % 3 !== 0,
+        type: TYPES[(seed + index) % TYPES.length] ?? null,
+        monitored: (seed + index) % 7 !== 0,
+      };
+    });
+
+    return {
+      serviceNo,
+      operator: OPERATORS[seed % OPERATORS.length] ?? 'SBST',
+      buses,
+    };
+  });
+};

@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bus-arrival
+  labels:
+    app: bus-arrival
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bus-arrival
+  template:
+    metadata:
+      labels:
+        app: bus-arrival
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: bus-arrival
+        # Built and pushed by .github/workflows/bus-arrival.yml on every push to
+        # main that touches apps/bus-arrival. Deploy a new build with:
+        #   kubectl rollout restart deployment/bus-arrival
+        # Roll back by pinning the SHA tag that workflow also pushes:
+        #   kubectl set image deployment/bus-arrival bus-arrival=ghcr.io/kylenguyen/bus-arrival:<sha>
+        image: ghcr.io/kylenguyen/bus-arrival:latest
+        # Required, not incidental: a moving tag with IfNotPresent would keep
+        # serving whatever the node cached the first time and silently ignore
+        # every rebuild.
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: LTA_ACCOUNT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: lta-datamall
+              key: accountKey
+              # Absent secret => the app boots in mock mode instead of
+              # crash-looping. Remove `optional` once the key is in place so a
+              # missing secret fails loudly rather than serving fake timings.
+              optional: true
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        # Deliberately a TCP check, not /healthz: a DataMall outage should not
+        # restart-loop a pod that is still serving cached timings fine.
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bus-arrival-svc
+spec:
+  selector:
+    app: bus-arrival
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+# Own hostname, so no stripPrefix or trailing-slash middleware is needed and
+# asset paths resolve against the root. Requires bus.kylen.dev (or a wildcard
+# *.kylen.dev) as a CNAME to the tunnel.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bus-arrival-ingress
+spec:
+  rules:
+  - host: bus.kylen.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bus-arrival-svc
+            port:
+              number: 80

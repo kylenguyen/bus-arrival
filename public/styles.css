@@ -1,0 +1,555 @@
+/* Mobile first. Nearly everyone opens this at a bus stop, on a phone, in a
+   hurry — so the phone layout is the base and the wide screen is the override. */
+
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eceef1;
+  --border: #dcdfe4;
+  --text: #16191d;
+  --muted: #656d78;
+  --accent: #b4232b;
+  --seats: #1c7c4a;
+  --standing: #a76a06;
+  --limited: #b4232b;
+  --shadow: 0 1px 2px rgb(16 19 29 / 0.06), 0 4px 12px rgb(16 19 29 / 0.04);
+  --radius: 12px;
+
+  /* Gutters follow the notch/home indicator on phones. */
+  --gutter: 0.85rem;
+  --pad-left: max(var(--gutter), env(safe-area-inset-left));
+  --pad-right: max(var(--gutter), env(safe-area-inset-right));
+
+  /* One source of truth for the arrivals grid, so the column headings line up
+     with the numbers underneath them. */
+  --col-service: 3.6rem;
+  --col-gap: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101215;
+    --surface: #191c21;
+    --surface-2: #22262c;
+    --border: #2c3138;
+    --text: #e9ebee;
+    --muted: #98a1ad;
+    --accent: #ff6b6b;
+    --seats: #4ec98a;
+    --standing: #e0a63c;
+    --limited: #ff6b6b;
+    --shadow: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  -webkit-text-size-adjust: 100%; /* iOS landscape must not inflate the numbers */
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0 var(--pad-right) calc(2.5rem + env(safe-area-inset-bottom)) var(--pad-left);
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+main,
+.masthead,
+.footer {
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.masthead {
+  padding: calc(0.9rem + env(safe-area-inset-top)) 0 0.9rem;
+}
+
+.masthead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.tagline.mock {
+  color: var(--standing);
+  font-weight: 600;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+input[type='search']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.ghost {
+  /* 2.75rem ≈ 44 px: the smallest thing a thumb hits reliably. */
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+button.ghost:active {
+  background: var(--surface-2);
+}
+
+button.primary {
+  min-height: 2.75rem;
+  padding: 0.65rem 1.2rem;
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* --- location gate --- */
+
+.gate {
+  padding: 2.25rem 0.5rem;
+  text-align: center;
+}
+
+.gate-msg {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  text-wrap: pretty;
+}
+
+/* --- search fallback --- */
+
+.finder {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+input[type='search'] {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem; /* 16 px or iOS zooms the page on focus */
+}
+
+.results {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  max-height: min(22rem, 55vh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.result-btn {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+}
+
+.result-btn:active {
+  background: var(--surface-2);
+}
+
+.result-code {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 3.6rem;
+}
+
+.result-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-road {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.note {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* --- board --- */
+
+.board {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.card.pinned {
+  border-color: var(--accent);
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-name {
+  display: block;
+  font-weight: 650;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* Code, road and walking distance wrap onto as many lines as the phone needs
+   rather than being truncated to one. */
+.card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.4rem;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.meta-where {
+  min-width: 0;
+}
+
+.meta-code {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Walking distance is the thing you act on, so it gets a chip of its own
+   rather than trailing off the end of a run-on line. */
+.meta-dist {
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pin {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: -0.4rem -0.35rem -0.4rem 0;
+  border-color: transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.pin[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.pin:active {
+  background: var(--surface-2);
+}
+
+/* --- arrivals table ---
+   Four columns shared by the heading row and every service row: the service
+   number, then the next three buses. */
+
+.services-head,
+.service {
+  display: grid;
+  grid-template-columns: var(--col-service) 1.25fr 1fr 1fr;
+  gap: var(--col-gap);
+  padding: 0.5rem 0.8rem;
+}
+
+.services-head {
+  padding-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.services-head > span + span {
+  text-align: right;
+}
+
+.services {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.services > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.service {
+  align-items: center;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.service-id {
+  min-width: 0;
+}
+
+.service-no {
+  display: block;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+}
+
+.tag {
+  padding: 0 0.22rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+/* The accessibility glyph carries its own shape; a border round it only costs
+   width the service column does not have on a 320 px phone. */
+.tag-icon {
+  padding: 0;
+  border: 0;
+  font-size: 0.7rem;
+}
+
+/* Each arrival stacks its minutes over its own crowding label, so the third
+   bus's occupancy is as legible as the first's. */
+.eta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.eta-value {
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.eta-lead .eta-value {
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+.eta-unit {
+  margin-left: 0.12rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+
+.eta-load {
+  min-height: 0.95rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.eta-empty .eta-value {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.eta.arriving .eta-value {
+  color: var(--accent);
+}
+
+/* Scheduled, not live-tracked: still shown, visibly less certain. */
+.eta.scheduled .eta-value {
+  opacity: 0.6;
+}
+
+.eta.scheduled .eta-value::after {
+  content: '*';
+  margin-left: 0.05rem;
+  font-size: 0.7em;
+  vertical-align: super;
+}
+
+.load-sea {
+  color: var(--seats);
+}
+
+.load-sda {
+  color: var(--standing);
+}
+
+.load-lsd {
+  color: var(--limited);
+}
+
+.card-msg {
+  padding: 0.85rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* --- footer --- */
+
+.footer {
+  padding-top: 1.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.dot {
+  margin: 0 0.35rem;
+}
+
+/* Very narrow phones (≤ 340 px): drop the third bus rather than let the
+   columns crush the first two. */
+@media (max-width: 21.5rem) {
+  .services-head,
+  .service {
+    grid-template-columns: var(--col-service) 1.3fr 1fr;
+  }
+
+  .services-head > span:last-child,
+  .service > .eta:last-child {
+    display: none;
+  }
+}
+
+/* Tablet and up: roomier, and the board goes multi-column. */
+@media (min-width: 40rem) {
+  :root {
+    --gutter: 1rem;
+    --col-service: 4rem;
+    --col-gap: 0.75rem;
+  }
+
+  .masthead {
+    padding-top: 1.5rem;
+    padding-bottom: 1.25rem;
+  }
+
+  h1 {
+    font-size: 1.55rem;
+  }
+
+  .board {
+    grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr));
+    gap: 1rem;
+  }
+
+  .card-head,
+  .services-head,
+  .service,
+  .card-msg {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
