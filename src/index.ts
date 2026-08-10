@@ -98,6 +98,16 @@ app.get('/api/board', async (req, res) => {
     }
   }
 
+  // `pinned` is capped at 25 and `limit` is clamped to 25 separately, but
+  // pinned stops are pushed without counting against `limit` — so
+  // ?limit=25&pinned=<25 codes> built a 50-stop board and a 50-call fan-out,
+  // double the ceiling README and AGENTS.md both document as a guarantee. Cut
+  // before the fan-out, not after: truncating the response would leave the
+  // calls already made. Pins are pushed first, so this drops nearby
+  // suggestions before pinned stops. A user with 25 pins gets 25 pinned cards
+  // and no suggestions, which is the stops they explicitly asked for.
+  board.length = Math.min(board.length, MAX_STOPS);
+
   const arrivals = await arrivalsForMany(board.map((stop) => stop.code));
   for (const stop of board) stop.services = arrivals.get(stop.code) ?? null;
 
