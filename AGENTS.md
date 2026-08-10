@@ -42,10 +42,9 @@ LTA_ACCOUNT_KEY=... npm start   # against the real DataMall API
 
 There is a test suite, and its scope is deliberately narrow: the
 concurrency-sensitive code in [src/cache.ts](src/cache.ts) and the state
-machines in [src/limiter.ts](src/limiter.ts) — `Backoff` now, the circuit
-breaker with task 5 of the activation plan — whose failure mode is
-silent — a broken cache does not error, it just hammers upstream — so `curl`
-cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
+machines in [src/limiter.ts](src/limiter.ts) — `Backoff` and `CircuitBreaker` —
+whose failure mode is silent — a broken cache does not error, it just hammers
+upstream — so `curl` cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
 with everything else, and use an injected clock; do not write a test that
 sleeps. Everything else in the repo is still verified by running it. There is
 no linter or formatter — do not invent `npm run lint`.
@@ -122,8 +121,22 @@ public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
   retry are one deadline rather than two.
 - [src/limiter.ts](src/limiter.ts) — the rate-limiting state machines, kept
   apart from their callers because they are pure state plus an injected clock.
-  `Backoff` today; the circuit breaker joins it in task 5.
-- [src/lta.ts](src/lta.ts) — DataMall client and response mapping
+  `Backoff` (per key, used by `cache.ts`) and `CircuitBreaker` (global, used by
+  `lta.ts`): five consecutive failures open it for 60 s, then a single probe
+  closes it or buys another 60 s. It counts only what the caller passes it —
+  which statuses mean "stop" is `lta.ts`'s decision, not the breaker's.
+- [src/lta.ts](src/lta.ts) — DataMall client and response mapping, the upstream
+  call counters, and the circuit breaker's policy: 429 and 5xx count as upstream
+  refusing, a network error or timeout counts too, any other 4xx does not and
+  neither does a 200 whose body will not parse. `Retry-After` is read off the
+  response (both the delta-seconds and HTTP-date forms) and replaces the 60 s
+  default, clamped to 120 s. **The breaker gates arrivals only.** `fetchAllStops`
+  calls `request()` directly and is deliberately unguarded — the plan text says
+  "across the whole client", and this is a considered divergence, not an
+  oversight: breaking the `BusStops` pull would let an arrivals outage keep a
+  cold pod un-ready and turn degraded timings into total downtime. Do not
+  "fix" it back. The call counter still counts every upstream call, the stop
+  list included.
 - [src/mock.ts](src/mock.ts) — synthetic stops and timings for mock mode
 - [src/config.ts](src/config.ts) — all env reading happens here, nowhere else
 
@@ -189,6 +202,17 @@ image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
 - `node --test dist/` hangs: given a directory, Node 24 executes *every* `.js`
   under it, including `dist/index.js`, which binds :8080 and never exits. That
   is why `npm test` passes the explicit `dist/**/*.test.js` pattern instead.
+- `breakerOpen` on `/healthz` stays `true` through half-open — from the trip
+  until a probe actually succeeds — because until then recovery is unproven.
+- Recovery from a breaker trip takes longer than the breaker's own window, and
+  that is correct. The breaker is global; `cache.ts` also backs off per key, and
+  while the breaker is open every key's loader rejects fast, so every key
+  accrues its own window too. The breaker closes on one probe, most stops return
+  immediately, and a stop that happened to open a 60 s window just before the
+  probe waits out the rest of it (measured: 13 of 15 stops back within 2 s of
+  the breaker closing, the last two at 68 s). Nothing hammers upstream in the
+  meantime and stops with a cached value serve it stale throughout. Both windows
+  cap at 60 s, so the tail is bounded by the longer of the two, not by their sum.
 - Field names and endpoint paths follow the DataMall user guide. LTA has
   revised them twice (`BusArrival` → `BusArrivalv2` → `v3/BusArrival`); check
   the current guide against `lta.ts` when activating a real account.
