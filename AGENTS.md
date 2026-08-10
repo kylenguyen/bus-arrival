@@ -194,8 +194,9 @@ image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
   `search()` keeps them findable. Preserve that split.
 - `Monitored: 0` means the timing is scheduled, not live-tracked. The UI marks
   it with `*`; do not present it as a live ETA.
-- Arrival TTL (15 s) sits below DataMall's own ~20–30 s refresh, so caching
-  costs no accuracy and protects the account quota. Do not lower it.
+- Arrival TTL (15 s) sits below the 20 s update frequency the guide documents
+  for Bus Arrival (§2.1), so caching costs no accuracy and protects the account
+  quota. Do not lower it.
 - Toggling a pin mid-load coalesces into `pendingLoad` rather than being
   dropped. Keep that behaviour if you touch `loadBoard()`.
 - The stop list loads *after* the port binds, so the container passes its
@@ -215,6 +216,13 @@ image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
   the breaker closing, the last two at 68 s). Nothing hammers upstream in the
   meantime and stops with a cached value serve it stale throughout. Both windows
   cap at 60 s, so the tail is bounded by the longer of the two, not by their sum.
-- Field names and endpoint paths follow the DataMall user guide. LTA has
-  revised them twice (`BusArrival` → `BusArrivalv2` → `v3/BusArrival`); check
-  the current guide against `lta.ts` when activating a real account.
+- Field names and endpoint paths were checked field-by-field against API User
+  Guide v6.9 (3 Aug 2026), §2.1 and §2.4, on 10 Aug 2026 — `docs/` holds the
+  PDF. LTA has revised the path twice (`BusArrival` → `BusArrivalv2` →
+  `v3/BusArrival`) and the field set once (v6.0 added `Monitored`), so re-check
+  only if the guide has moved past 6.9.
+- The stop-list walk advances `$skip` by the records a page actually returned
+  and stops on an empty page. It does **not** treat a short page as the last
+  one: the guide says the 500-record cap "may be adjusted from time to time",
+  and a lowered cap would then truncate ~5,000 stops to one page silently.
+  `src/lta.stops.test.ts` pins this. Costs one extra request a day.

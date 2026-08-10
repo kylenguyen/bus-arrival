@@ -100,10 +100,11 @@ cannot fan out across the whole feed.
 
 ## Before sharing the link
 
-- Verify the DataMall endpoint paths and field names in `src/lta.ts` against
-  the current DataMall API user guide. They follow the published v2 shape, but
-  LTA has revised field sets before and this code has only been exercised
-  against the mock.
+- Endpoint paths and field names in `src/lta.ts` match API User Guide v6.9
+  (3 Aug 2026), §2.1 Bus Arrival and §2.4 Bus Stops — checked 10 Aug 2026, PDF
+  in `docs/`. Re-verify only if LTA publishes a later guide. The code has still
+  only been exercised against the mock and the stub, so watch the logs on the
+  first real call.
 - Check DataMall's terms on redistributing their data before exposing
   `/api/*` as a public API rather than as the UI's own backend.
 - Confirm your account's rate limit against the fan-out above and raise

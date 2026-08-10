@@ -11,9 +11,10 @@ export const config = {
   accountKey: process.env.LTA_ACCOUNT_KEY?.trim() || null,
   baseUrl: process.env.LTA_BASE_URL ?? 'https://datamall2.mytransport.sg/ltaodataservice',
 
-  // DataMall refreshes arrivals roughly every 20-30s, so caching below that
-  // costs accuracy nothing and keeps us well inside the account quota no
-  // matter how many people load the page at once.
+  // The guide gives Bus Arrival an update frequency of 20 s (§2.1; it was
+  // tightened from 30 s in guide v6.2), so caching below that costs accuracy
+  // nothing and keeps us well inside the account quota no matter how many
+  // people load the page at once. Raise it towards 20_000 if spend needs it.
   arrivalTtlMs: num(process.env.ARRIVAL_TTL_MS, 15_000),
 
   // The stop list changes a few times a year. Reload daily.

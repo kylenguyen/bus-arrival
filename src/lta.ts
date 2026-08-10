@@ -5,13 +5,19 @@ import type { ArrivalBus, ArrivalService, BusStop, Load } from './types.js';
 /**
  * Client for LTA DataMall.
  *
- * Endpoint paths and field names below follow the DataMall API user guide;
- * verify them against the current guide when you activate the account, since
- * LTA has revised paths before (BusArrival -> BusArrivalv2 -> v3/BusArrival).
+ * Paths, parameters and field names below were checked against the API User
+ * Guide v6.9 (3 Aug 2026) — §2.1 Bus Arrival and §2.4 Bus Stops — on
+ * 10 Aug 2026. Re-check on activation only if the guide has moved past 6.9:
+ * LTA has revised paths twice (BusArrival -> BusArrivalv2 -> v3/BusArrival)
+ * and the field set once (v6.0 added `Monitored`).
  */
 
-const PAGE_SIZE = 500;
-const MAX_PAGES = 40; // ~20k stops; the real figure is around 5k.
+/**
+ * Ceiling on requests per stop-list refresh. Not a claim about the feed's size:
+ * at the guide's documented 500 records a call this is 20k stops against a real
+ * figure around 5k, and it leaves headroom if LTA lowers the cap.
+ */
+const MAX_REQUESTS = 40;
 
 class DataMallError extends Error {
   constructor(
@@ -250,9 +256,10 @@ const toStop = (raw: RawStop): BusStop | null => {
  */
 export const fetchAllStops = async (): Promise<BusStop[]> => {
   const stops: BusStop[] = [];
+  let skip = 0;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const body = await request('BusStops', { $skip: String(page * PAGE_SIZE) });
+  for (let attempt = 0; attempt < MAX_REQUESTS; attempt += 1) {
+    const body = await request('BusStops', { $skip: String(skip) });
     // The stop feed has no non-operating hours, so an empty body here is a
     // failure, not "there are no stops". Throwing keeps `stops.ts` on the
     // previous list; returning what we have so far would silently truncate it
@@ -260,14 +267,23 @@ export const fetchAllStops = async (): Promise<BusStop[]> => {
     if (body === EMPTY_BODY) throw new DataMallError('DataMall BusStops returned an empty body');
 
     const batch = (body as { value?: RawStop[] }).value ?? [];
+    // Stop on an empty page, and advance `$skip` by what actually came back
+    // rather than by an assumed 500. The guide states the per-call record cap
+    // "may be adjusted from time to time" (§1, Table 1) and `$skip` counts
+    // records, so treating a short page as the last one would truncate the
+    // whole list to a single page the day LTA lowers the cap — and a short
+    // list is indistinguishable downstream from a genuinely short feed. The
+    // price is one extra request per refresh, which is once a day.
+    if (batch.length === 0) return stops;
+    skip += batch.length;
+
     for (const raw of batch) {
       const stop = toStop(raw);
       if (stop) stops.push(stop);
     }
-    if (batch.length < PAGE_SIZE) return stops;
   }
 
-  console.warn(`stop feed hit the ${MAX_PAGES}-page ceiling; list may be truncated`);
+  console.warn(`stop feed hit the ${MAX_REQUESTS}-request ceiling; list may be truncated`);
   return stops;
 };
 

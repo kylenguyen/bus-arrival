@@ -14,14 +14,18 @@ export interface NearbyStop extends BusStop {
 export type Load = 'SEA' | 'SDA' | 'LSD' | null;
 
 export interface ArrivalBus {
-  /** ISO 8601 with +08:00 offset, as DataMall returns it. */
+  /**
+   * ISO 8601, normalised to UTC. DataMall sends it with a +08:00 offset
+   * (`2024-08-14T16:41:48+08:00`); `lta.ts` reparses and emits the `Z` form, so
+   * the client's arithmetic against `Date.now()` never depends on the offset.
+   */
   estimatedArrival: string | null;
   load: Load;
-  /** 'WAB' when the bus is wheelchair accessible. */
+  /** DataMall `Feature` is 'WAB' when the bus is wheelchair accessible. */
   wheelchairAccessible: boolean;
-  /** 'SD' single deck, 'DD' double deck, 'BD' bendy. */
+  /** DataMall `Type`: 'SD' single deck, 'DD' double deck, 'BD' bendy. */
   type: string | null;
-  /** False when the timing is scheduled rather than live-tracked. */
+  /** DataMall `Monitored`: 0 means the timing is scheduled, not live-tracked. */
   monitored: boolean;
 }
 
