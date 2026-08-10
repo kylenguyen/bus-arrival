@@ -24,6 +24,7 @@ ready to pick up once real traffic tells us what actually needs fixing.
 | 5 | ~~No test suite yet~~ **Reversed 10 Aug 2026** | Backoff and the breaker have no observable failure signal and no deterministic manual check. A minimal `node:test` over `cache.ts` and the limiter is now task 0 |
 | 6 | `replicas: 1` stays | Caches are per-pod; N pods multiply upstream rate by ~N |
 | 7 | Launch to a small user set behind the same public URL | No auth layer exists and building one is out of scope. "Small" means we control who is told the URL, not who can reach it |
+| 8 | **Added 10 Aug 2026** — the circuit breaker gates arrivals only, not the stop-list pull | Breaking `BusStops` too would let a run of arrivals failures block the pull that makes the pod ready, turning degraded timings into a cold-start 503 and an empty board. The stop list is one call a day, so it cannot be what burns the quota, and `stops.ts` already keeps the previous list on a refresh failure |
 
 Decision 5 is the one that changed. The reasoning: three of the original tasks
 (backoff, circuit breaker, token bucket) return byte-identical responses whether
@@ -208,7 +209,7 @@ failing test against. Fixing that:
 
 | Parameter | Value | Note |
 |---|---|---|
-| Trip threshold | 5 consecutive 429 or 5xx across the whole client | Consecutive, so an isolated blip does not trip it |
+| Trip threshold | 5 consecutive 429 or 5xx across the arrivals path | Consecutive, so an isolated blip does not trip it. Arrivals only, per decision 8 — `fetchAllStops` calls upstream unguarded |
 | Open duration | 60 s | Matches the backoff cap |
 | Recovery | Half-open: one probe request. Success closes, failure re-opens for another 60 s | |
 | `Retry-After` | Honoured when present, clamped to 120 s | An unbounded value from upstream must not wedge us |
@@ -223,8 +224,11 @@ AccountKey.
 **Verify.**
 
 1. `npm test` — trip, open, half-open, close, re-open, with an injected clock.
-2. Stub in `429` mode with `Retry-After: 5`: after the first 429,
-   `upstreamCalls` does not move for 5 s.
+2. Stub in `429` mode with `Retry-After: 5`: after the **fifth consecutive**
+   429, `upstreamCalls` does not move for 5 s. *Corrected 10 Aug 2026 — the
+   first draft said "after the first 429", which describes breaker behaviour at
+   a point where the breaker cannot yet have tripped. A single 429 is held only
+   by the per-key backoff's 2 s window; measured at 2001 ms. See A9.*
 3. Drive 6 failures, then hold. `/healthz` reports `breakerOpen: true` and
    `upstreamCalls` is flat for 60 s. `/api/board` still responds in **under
    500 ms** — an open breaker must be fast, not slow.
@@ -281,6 +285,16 @@ Do not proceed until all eight tasks are done and:
 - The full stub verification above has been run end to end, in one sitting, on
   the merge commit. Not task by task across a week.
 
+**Gate run 10 Aug 2026, branch `datamall-activation`.** Passed. Build clean,
+38 tests green, and the suite verified to fail for the right reason — removing
+the `cache.ts` failure re-stamp turns exactly the two backoff tests red.
+Measured against the stub: empty-body 60 s → 4 calls/min with `services: []`
+and no trip; 500 for 60 s → 5 calls with all 60 client responses 200 on stale
+timings; breaker open → `/api/board` median 4 ms, max 7 ms; 25 pins + limit=25
+→ 25 stops and 25 calls; zero hits grepping every application log for the
+stub's planted fake AccountKey. One check failed as written and was corrected
+rather than the code changed — see task 5's verify item 2 and A9.
+
 ## Activation
 
 ```sh
@@ -308,7 +322,7 @@ failure this whole critical path was built to prevent.
 |---|---|---|
 | First hour | `upstreamCallsPerMin` under load | Anything above roughly 2× your user count per minute |
 | 01:00–05:00 | `upstreamCallsPerMin` overnight | Sustained non-zero rate — the backoff is not holding |
-| Any time | `breakerOpen` | `true` for more than one 60 s window means upstream is genuinely unhappy |
+| Any time | `breakerOpen` | `true` for more than ~2 min means upstream is genuinely unhappy. Not 60 s: the flag lags real recovery, because a closed breaker needs a request to reach it to serve as the probe, and every key may still be inside its own backoff window. Observed closing 17 s after upstream healed, and still `true` 20 s after in another run |
 | Day 7 | Cumulative `upstreamCalls` | Feeds the token-bucket sizing in Appendix A |
 
 Widening beyond the first users needs a week of that data, not a good first
@@ -511,6 +525,35 @@ change:
   draft fixed only the README copy.
 - Both files: note that no rate limit is documented by LTA, and that the
   breaker — later the bucket — is the control.
+
+## A9. `Retry-After` reaches the breaker but not the backoff
+
+Recorded 10 Aug 2026, found by the launch gate. Not a defect in anything that
+was built — a gap between two mechanisms that were specified separately.
+
+`Retry-After` is parsed in `lta.ts` and passed to `CircuitBreaker.recordFailure`,
+which honours it. `Backoff.recordFailure` takes a key and nothing else, so a
+single 429 against one stop is held by the backoff's own 2 s first window
+regardless of what upstream asked for. Measured: upstream said 5 s, the key
+retried at 2001 ms.
+
+Bounded twice. It is per key, so it is one extra call rather than a storm, and
+any run of five consecutive failures hands control to the breaker, which does
+wait the full window — verified at 5.2 s with the header and flat for 60 s
+without it. Worst realistic case is one intermittently-429ing stop among healthy
+ones: roughly two extra calls per key per window, breaker never involved.
+
+Deferred because closing it means threading a deadline through
+`Backoff.recordFailure` and therefore through `TtlCache`, which would give the
+generic cache knowledge of an HTTP header. That is the module the whole gate
+rests on, and the saving is single-digit calls. Revisit at day 7 alongside A1 —
+if the real `upstreamCalls` data shows DataMall sending `Retry-After` routinely
+rather than exceptionally, the trade changes.
+
+**Verify, if picked up.** Stub in `429` mode with `Retry-After: 5`, one fresh
+stop code polled at 200 ms: the first retry lands at ~5 s, not ~2 s, and the
+2/4/8 progression resumes only for failures upstream did not name a deadline
+for.
 
 ---
 
