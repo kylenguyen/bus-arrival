@@ -4,19 +4,49 @@ Guidance for coding agents working in this repository. Read this before making c
 
 ## What this is
 
-A single-page bus arrival board for Singapore. A commuter opens the page, allows
-location once, and sees the 15 nearest stops with what is coming, when, and how
-full it is. No sign-up, no settings, no onboarding.
+A single-page bus arrival board for Singapore. A commuter opens the page, picks
+one of two doors — current location, or a stop code they already know — and sees
+the 8 nearest stops to it with what is coming, when, and how full it is. No
+sign-up and no settings.
+
+The dialog on the first visit is the **entry choice**, not onboarding and not a
+settings screen. It is there because the board cannot rank anything without a
+coordinate, and the two ways of getting one are genuinely different journeys: the
+alternative is a native permission prompt as the first thing a stranger sees,
+with nothing on screen to explain it, and no way in at all for someone who will
+not share a location. It is one question, answered by tapping one of two buttons,
+never shown again once a coordinate is in hand, and stored as which door was used
+rather than as a preference. Do not grow it into a settings panel, and do not
+simplify it away — the second door is the whole reason the first one is allowed to
+be refused.
 
 The product goal is speed and low friction, not features. When a change trades
 convenience for capability, the default answer is no. Concretely:
 
 - First paint should be one network round trip. `/api/board` returns stops and
   arrivals together for exactly that reason — do not split it back apart.
-- No login, no account, no server-side user state. Pins and the last coordinate
-  live in `localStorage`; the server stores nothing about anyone.
+- No login, no account, no server-side user state. Three `localStorage` keys, and
+  the server stores nothing about anyone:
+  - `bus-board.pins.v1` — the pinned stops. Orthogonal to the rest: a pin is not
+    a door, and changing door leaves them alone.
+  - `bus-board.loc.v1` — the last GPS fix and its age, and the **sole** owner of
+    both. The 12 h cached-paint window, the 5-minute focus re-locate and the
+    200 m re-rank all read this key and only this key, which is why all three
+    went through the two-door change untouched.
+  - `bus-board.origin.v1` — which door the board is ranked from: `{mode:'gps'}`,
+    or `{mode:'stop', code, description, roadName, lat, lon}`. Written only when
+    a coordinate is actually in hand — a fix, or a stop chosen from search — so a
+    denial or a dismissal leaves a first visit still a first visit. The gps
+    record carries **no coordinate, on purpose**: it is one bit, and a second
+    copy of the fix would be a second thing to keep in step with `loc.v1`. Read
+    a coordinate with `originCoord(origin, lastLoc)`; never store one here, and
+    never read the fix from anywhere but `loc.v1`.
 - No new user-facing configuration. If a setting would need explaining, pick a
-  sensible default instead.
+  sensible default instead. The first-visit entry choice is not an exception to
+  this: a setting is something the user maintains and can be wrong about later,
+  whereas that is one question with no default that could be right for both
+  answers, asked once and never again. Adding a way to change a preference is
+  configuration; asking which of two journeys this is, is not.
 - Mobile phone at a bus stop on cellular data is the target device. Wide screens
   are the override, not the base.
 
@@ -26,6 +56,13 @@ convenience for capability, the default answer is no. Concretely:
 - Express 4 — the only runtime dependency
 - Frontend: hand-written HTML/CSS/JS in [public/](public/). No framework, no
   bundler, no build step. Keep it that way unless the maintainer says otherwise.
+  Two ES modules, and the split is load-bearing:
+  [public/origin.js](public/origin.js) is pure decision logic (no DOM, no
+  `fetch`, no `localStorage`, no clock) and [public/app.js](public/app.js) is the
+  glue that imports it — elements, requests, storage, listeners, each apply site
+  a one-line assignment. It is split that way because `app.js` cannot be imported
+  by a test and `origin.js` can, which is the only unit coverage the journey
+  rules have. Do not inline it back.
 - Upstream data: LTA DataMall (`BusStops`, `v3/BusArrival`)
 
 ## Commands
@@ -46,7 +83,15 @@ machines in [src/limiter.ts](src/limiter.ts) — `Backoff` and `CircuitBreaker` 
 whose failure mode is silent — a broken cache does not error, it just hammers
 upstream — so `curl` cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
 with everything else, and use an injected clock; do not write a test that
-sleeps. Everything else in the repo is still verified by running it. There is
+sleeps. [src/origin.test.ts](src/origin.test.ts) is the exception to "tests
+cover `src/`": it reaches into `public/origin.js` with a *computed* specifier,
+`await import(new URL('../public/origin.js', import.meta.url).href)`, because a
+literal path trips TS2307 (no declarations) and TS6059 (outside `rootDir`) —
+computed, tsc leaves it alone, the module types as `any` and the build stays
+clean. Keep it computed. The other half of that bargain is that `origin.js` must
+never read the clock: anything time-dependent takes `now` as a parameter and
+`app.js` supplies it, so no test there needs timers either. Everything else in
+the repo is still verified by running it. There is
 no linter or formatter — do not invent `npm run lint`.
 
 A committed DataMall stub lives at
@@ -70,7 +115,8 @@ timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
 
 ## Verifying a change
 
-`npm test` covers the two modules above. Everything else, verify by running it:
+`npm test` covers the two modules above, and CI runs it on every push to `main`
+before the image build. Everything else, verify by running it:
 
 1. `npm run build` — must pass clean. `strict` and `noUncheckedIndexedAccess`
    are on; do not silence errors with `any` or `!`.
@@ -86,16 +132,20 @@ timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
    `curl -s 'localhost:8080/api/board?lat=1.3521&lon=103.8198&limit=3'`.
 4. For frontend changes, open `http://localhost:8080` and check the board in a
    narrow viewport. Geolocation needs a secure context — `localhost` counts, a
-   bare LAN IP does not.
+   bare LAN IP does not. The first visit is a different journey from every later
+   one, so clear the three keys (DevTools → Application → Local Storage) to get
+   the intro dialog back, and exercise both doors — a returning visitor never
+   sees it.
 
 Mock mode (no `LTA_ACCOUNT_KEY`) serves 12 synthetic stops with synthetic
-timings, so the board is shorter than 15 there. That is expected, not a bug.
+timings — enough to fill the 8-stop board, but search has almost nothing to
+match. That is expected, not a bug.
 
 ## Architecture
 
 ```
 public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
-                 GET /api/arrivals?stops=…                │
+ └─ origin.js    GET /api/arrivals?stops=…                │
                  GET /api/stops?q=…                       │
                                             ┌─────────────┴─────────────┐
                                        StopIndex                   arrivalsForMany
@@ -105,6 +155,9 @@ public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
                                                     DataMall / mock.ts
 ```
 
+- [public/app.js](public/app.js) — glue only: elements, `fetch`, `localStorage`,
+  event wiring. Every rule it applies is decided in
+  [public/origin.js](public/origin.js), which is pure and unit tested
 - [src/index.ts](src/index.ts) — Express routes, input validation, static files
 - [src/stops.ts](src/stops.ts) — the whole stop list in memory; linear-scan
   search and nearest-neighbour, refreshed daily. A few thousand rows, so no
@@ -183,22 +236,52 @@ reachable: exposing rough traffic volume is accepted, anything per-IP or
 per-stop is not. Probing it costs nothing upstream — only `request()` in
 `lta.ts` increments, so readiness polling never inflates the numbers.
 
-Note a discrepancy to resolve with the maintainer before relying on it: the
-manifest comments reference a CI workflow at `.github/workflows/bus-arrival.yml`
-and a path `apps/bus-arrival`, neither of which exists in this repository. The
-image `ghcr.io/kylenguyen/bus-arrival:latest` is presumably built elsewhere.
+The CI workflow the manifest comments reference,
+[.github/workflows/bus-arrival.yml](.github/workflows/bus-arrival.yml), is in
+this repository: on every push to `main` it runs `npm ci && npm test` and only
+builds and pushes `ghcr.io/kylenguyen/bus-arrival` (`:latest` plus the commit
+SHA) if that passes. A red suite therefore blocks the tag the cluster pulls.
+Nothing in the repository references a path `apps/bus-arrival`.
 
 ## Gotchas
 
 - A handful of real stops carry `0,0` coordinates. `nearby()` filters them out;
-  `search()` keeps them findable. Preserve that split.
+  `search()` keeps them findable. Preserve that split. The frontend consequence:
+  such a stop is tappable in the search results but must never become the board's
+  origin — ranking from `0,0` puts the whole of Singapore ~1,300 km away and
+  falsely trips the delisted-stop note. `isUsableStopCoord` in
+  [public/origin.js](public/origin.js) is the single place that is enforced, on
+  both the stored record and the commit path; the tap is refused with the ordinary
+  "no such stop" wording rather than a sentence about coordinates.
+- iOS Safari spends a click's transient activation on the first `await`, and
+  `getCurrentPosition` called after that point never prompts — silently, and only
+  on iPhone. That is why `getPosition()`'s call sits inside a synchronously
+  executed `Promise` executor, why `startWithLocation()` closes the dialog, shuts
+  the finder and raises the gate with synchronous DOM calls only, and why both
+  location buttons and the gate's retry route through it rather than through
+  `locate()`, which awaits `navigator.permissions.query` first. Nothing may be
+  `await`ed anywhere between a click and that call — the rule belongs to the whole
+  chain, not to one function. Desktop Chrome stays green either way and no test
+  here can catch it, so a real iPhone is the only check.
+- Reading `localStorage` throws as well as writing it — Firefox with
+  `dom.storage.enabled = false` throws on the access itself — so every read sits
+  inside a `try` (`readRaw`, `readPins`, `readLoc`) and every write goes through
+  `write()`. A session with storage blocked works and simply is not remembered,
+  which for a first-time visitor means the intro returns on every reload.
 - `Monitored: 0` means the timing is scheduled, not live-tracked. The UI marks
   it with `*`; do not present it as a live ETA.
 - Arrival TTL (15 s) sits below the 20 s update frequency the guide documents
   for Bus Arrival (§2.1), so caching costs no accuracy and protects the account
   quota. Do not lower it.
 - Toggling a pin mid-load coalesces into `pendingLoad` rather than being
-  dropped. Keep that behaviour if you touch `loadBoard()`.
+  dropped. Keep that behaviour if you touch `loadBoard()`. Two things now depend
+  on the rest of its shape: the coordinate comes from `originCoord()`, not from
+  the argument, so no caller can rank the board by the wrong door; and the
+  coalesced early return resolves `undefined`, which is how `switchOrigin` tells
+  "a load was already in flight" from "my load failed". Only `false` rolls a
+  switch back, and rolling back means restoring the origin record *and* the board
+  — the `board` array is deliberately left intact so there is something to
+  restore, so clear `el.board` and `shellSignature` but never the array.
 - The stop list loads *after* the port binds, so the container passes its
   startup probe even when DataMall is slow. `/healthz` returns 503 until the
   list is in.

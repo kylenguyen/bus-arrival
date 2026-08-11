@@ -163,11 +163,137 @@ button.primary {
   text-wrap: pretty;
 }
 
+/* A refusal offers two answers and neither is a clear default, so they sit side
+   by side and wrap on a narrow phone rather than one being demoted. */
+.gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+/* --- intro dialog ---
+   First visit only. Deliberately plain: no animation, no z-index, no custom
+   close button — the UA gives modality, the focus trap and Escape for free, and
+   every one of those is a thing to get wrong by hand. */
+
+dialog#intro {
+  /* The UA border and padding, and its max-width, are all wrong for a phone. */
+  border: 1px solid var(--border);
+  padding: 1.15rem;
+  margin: auto;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+
+/* The border above is not decoration. `--shadow` is `none` in dark mode, so
+   without it the only thing separating --surface (#191c21) from the dimmed page
+   behind it is the 45% backdrop — a ~9% luminance step, which reads as no edge
+   at all. It matches how every other raised surface here is built (.card,
+   .results: token border plus shadow) and costs nothing in light mode. */
+
+dialog::backdrop {
+  /* The one raw colour in this file: correct in both schemes, and a token would
+     have to be defined twice to say the same thing. */
+  background: rgb(0 0 0 / 0.45);
+}
+
+#intro h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+
+#intro p {
+  margin: 0.6rem 0 0;
+  font-size: 0.95rem;
+  text-wrap: pretty;
+}
+
+/* The three rules below are scoped by the id, not by class alone, because they
+   have to outrank `#intro p` above — a bare `.intro-sub` loses 1-0-1 to 0-1-0 and
+   the sub-labels would silently render at body size. */
+
+#intro .intro-q {
+  font-weight: 600;
+}
+
+/* Sub-labels sit under their button, not beside it: at 320 px there is no beside. */
+#intro .intro-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+#intro .intro-fine {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* One column, reading order, so the label always follows the button it describes
+   and a screen reader hears them in that order too. */
+.intro-actions {
+  display: grid;
+  gap: 0.15rem;
+  margin-top: 0.9rem;
+}
+
+.intro-actions button {
+  width: 100%;
+  /* Both classes already carry the 2.75rem thumb target. */
+  margin-top: 0.75rem;
+}
+
+/* No `showModal` (iOS below 15.4): the dialog renders in flow, so it needs its
+   own breathing room rather than sitting flush against the masthead. The class is
+   set by `showIntro()` on the fallback path.
+
+   The plan specified `dialog#intro[open]:not(:modal)` for this. That selector is
+   inert in exactly the browsers that need it: `:modal` shipped alongside
+   `showModal` (both Safari 15.4), so on iOS 15.0–15.3 the whole selector is
+   unrecognised, the rule is dropped, and the fallback gets no margin at all. */
+dialog#intro.intro-inflow {
+  margin: 1rem auto;
+}
+
 /* --- search fallback --- */
 
 .finder {
   position: relative;
   margin-bottom: 1rem;
+}
+
+/* The other door, above the box rather than below the results: it is a choice
+   between two ways in, not a fallback from a search that failed. A wrapping flex
+   row, so the caption sits beside the button where there is room and under it at
+   320 px — which is why neither media query has anything to say about this. */
+.finder-loc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.finder-or {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* The tick belongs to the pressed state, so switching modes stays one
+   `aria-pressed` assignment in app.js with no second class to keep in step — and
+   the glyph can never contradict what assistive technology is told. */
+#use-location[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+#use-location[aria-pressed='true']::before {
+  /* Non-breaking space: the tick must not end up alone on its own line. */
+  content: '✓\00a0';
 }
 
 input[type='search'] {
@@ -239,6 +365,12 @@ input[type='search'] {
   margin: 0.6rem 0 0;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+/* Reuses `.note` entirely; it only needs room below it, because unlike the
+   finder's note this one has the board immediately underneath. */
+#board-note {
+  margin: 0 0 0.75rem;
 }
 
 /* --- board --- */

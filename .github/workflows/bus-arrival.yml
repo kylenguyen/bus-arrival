@@ -17,7 +17,27 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Match the Dockerfile's base image; the runtime the tests pass on
+          # should be the runtime the image ships.
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
   build:
+    # A red suite must not reach :latest — the cluster pulls that tag on every
+    # rollout, so a failed test here is the last place to stop it.
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

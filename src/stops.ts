@@ -105,7 +105,7 @@ export class StopIndex {
     return Math.round(haversineM(lat, lon, stop.lat, stop.lon));
   }
 
-  nearby(lat: number, lon: number, limit = 15): NearbyStop[] {
+  nearby(lat: number, lon: number, limit = 8): NearbyStop[] {
     return this.#stops
       // A few records carry 0,0 coordinates; they would otherwise rank as
       // "nearby" for anyone standing off the west coast of Africa.

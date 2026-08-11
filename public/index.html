@@ -9,6 +9,8 @@
     <meta name="theme-color" content="#101215" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Live bus arrival times for the stops nearest you." />
     <title>Bus Arrivals</title>
+    <!-- Fetched in parallel with app.js, which imports it, rather than after. -->
+    <link rel="modulepreload" href="/origin.js" />
     <link rel="stylesheet" href="/styles.css" />
     <link
       rel="icon"
@@ -19,20 +21,44 @@
     <header class="masthead">
       <div class="masthead-row">
         <h1>Bus Arrivals</h1>
-        <button id="search-toggle" type="button" class="ghost" aria-expanded="false">
-          Search
+        <!-- Not a search button: it names the door the board is ranked from and
+             opens the panel that changes it. The label is short on purpose — it
+             shares this row with the h1 on a 360 px phone and `.ghost` does not
+             wrap — so the long description lives in aria-label. Both are
+             overwritten by `renderChip()`; the gps wording is here because it is
+             the common state and the markup should not read as a placeholder. -->
+        <button
+          id="origin-chip"
+          type="button"
+          class="ghost"
+          aria-expanded="false"
+          aria-controls="finder"
+          aria-label="Change stops shown. Currently: stops near you"
+        >
+          Near you ▾
         </button>
       </div>
       <p class="tagline" id="tagline">Stops nearest you, live from LTA</p>
     </header>
 
     <main>
-      <section class="finder" id="finder" aria-label="Find a bus stop" hidden>
+      <!-- Both doors, in one place. This is no longer only a search box: what it
+           changes is which stops the board shows, which is why the location
+           button lives here rather than in a second panel — `startWithCode()`
+           opens this, so the other door is already on screen. -->
+      <section class="finder" id="finder" aria-label="Change the stops shown" hidden>
+        <div class="finder-loc">
+          <button id="use-location" type="button" class="ghost" aria-pressed="false">
+            Use my current location
+          </button>
+          <p class="finder-or">or search for a stop</p>
+        </div>
         <label class="visually-hidden" for="search">Search bus stops</label>
         <input
           id="search"
           type="search"
           inputmode="search"
+          enterkeyhint="search"
           autocomplete="off"
           spellcheck="false"
           placeholder="Stop code or name, e.g. 43179 or Toa Payoh"
@@ -41,11 +67,19 @@
         <p id="finder-note" class="note" hidden></p>
       </section>
 
-      <!-- Location state: prompt, denial, retry. Hidden once the board loads. -->
+      <!-- Location state: prompt, denial, retry. Hidden once the board loads.
+           Two buttons because a denial has two honest answers — name a stop, or
+           try the location again — and neither is the obvious default. -->
       <section id="gate" class="gate" hidden>
         <p id="gate-msg" class="gate-msg"></p>
-        <button id="gate-action" type="button" class="primary" hidden></button>
+        <div class="gate-actions">
+          <button id="gate-action" type="button" class="primary" hidden></button>
+          <button id="gate-alt" type="button" class="ghost" hidden></button>
+        </div>
       </section>
+
+      <!-- Only ever says one thing: the origin stop is no longer in service. -->
+      <p id="board-note" class="note" hidden></p>
 
       <section id="board" class="board" aria-live="polite" aria-label="Nearby bus stops"></section>
     </main>
@@ -57,6 +91,32 @@
       <span class="dot">·</span>
       <span>Data © LTA, via DataMall</span>
     </footer>
+
+    <!-- First visit only, and only until a door is chosen. Static markup, so
+         nothing about the entry choice depends on JS having run; `showIntro()`
+         opens it and fills in the one adaptive sentence. The two doors both end
+         at a coordinate, which is the only thing the board needs. -->
+    <dialog id="intro" aria-labelledby="intro-title">
+      <h2 id="intro-title">Bus arrival times</h2>
+      <p>
+        A quick way to see when the next bus is coming, at any stop in Singapore. That’s all it
+        does — no sign-up, nothing to set up.
+      </p>
+      <p class="intro-q">How would you like to start?</p>
+      <div class="intro-actions">
+        <button id="intro-gps" type="button" class="primary" autofocus
+                aria-describedby="intro-gps-sub">Use my current location</button>
+        <p class="intro-sub" id="intro-gps-sub">Stops nearest you</p>
+        <!-- Replaces the location button when it cannot possibly work. -->
+        <p class="intro-sub" id="intro-no-gps" hidden></p>
+        <button id="intro-code" type="button" class="ghost"
+                aria-describedby="intro-code-sub">Enter a stop code</button>
+        <p class="intro-sub" id="intro-code-sub">A stop you already know</p>
+      </div>
+      <p class="intro-fine">
+        Your location is only used to rank nearby stops. It is not logged or saved.
+      </p>
+    </dialog>
 
     <script src="/app.js" type="module"></script>
   </body>

@@ -1,26 +1,48 @@
 # Bus arrival board
 
-Live Singapore bus arrival times. Open the page, allow location once, and the
-15 nearest stops appear with what is coming, when, and how full it is. Nothing
-to sign up for and nothing to configure.
+Live Singapore bus arrival times. On the first visit, pick one of two doors —
+your current location, or a stop code you already know — and the 8 nearest stops
+to it appear with what is coming, when, and how full it is. Later visits open on
+the same door with no taps. Nothing to sign up for and nothing to configure.
 
 Stops can be pinned (★) to keep them at the top of the board regardless of where
-you are. Pins and your last coordinate live in `localStorage`; the server stores
-nothing about anyone.
+you are. Pins, your last coordinate and which door you came in by — your location
+or a stop you named — live in `localStorage`; the server stores nothing about
+anyone.
 
 Runs in **mock mode** until an LTA DataMall AccountKey is supplied, so the whole
-thing is deployable and demoable today. Mock mode only has 12 synthetic stops,
-so the board is shorter than 15 there.
+thing is deployable and demoable today. Mock mode only has 12 synthetic stops —
+enough to fill the board, but little to search through.
 
 ## The journey
 
-1. First visit: the browser asks for location. On HTTPS the grant is remembered
-   by the browser, so a returning visitor is never asked again.
+1. First visit: a dialog explains the site in two sentences and offers the two
+   doors. Nothing loads and nothing is asked for until one is chosen — a native
+   permission prompt cannot say what it is for, so it no longer comes first.
+   Dismissing the dialog opens the search box, remembers nothing, and brings it
+   back next visit. Choose location and the browser asks; on HTTPS the grant is
+   remembered, so a returning visitor is never asked again. Where location cannot
+   possibly work — an insecure origin, or a browser without geolocation — that
+   door is removed rather than offered and refused.
 2. The nearest stops render in one request — stops and arrivals together.
-3. The coordinate is cached locally, so repeat visits paint the board before the
-   GPS fix comes back, and only re-rank if you have moved more than ~200 m.
-4. Refused or unavailable location: a search box appears instead. Searched stops
-   are pinned to the board.
+3. In location mode the coordinate is cached locally, so repeat visits paint the
+   board before the GPS fix comes back, and only re-rank if you have moved more
+   than ~200 m.
+4. Refused or unavailable location: the page says which of the three things went
+   wrong and offers both remaining answers — enter a stop code, or try location
+   again. Nothing is opened or focused for you, so the explanation stays
+   readable. A returning visitor who revoked the permission keeps their cached
+   board and is not interrupted at all.
+5. Either way into the search box, tapping a stop there ranks the whole board
+   around that stop — that stop first, then its nearest neighbours — and later
+   visits open the same way, with no location request at all. A full 5-digit code
+   commits on Enter, without a tap. Choosing a stop does not pin it; ★ is still
+   how a stop is pinned. Distances are then metres from that stop, not a walk
+   from you.
+6. The chip in the masthead says which door the board is ranked from — "Near you",
+   or the stop code — and opens that same box to change it. It is where the Search
+   button used to be, because what the box changes is which stops the board shows,
+   not just what you are looking for.
 
 ## Local run
 
