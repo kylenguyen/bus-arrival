@@ -69,7 +69,7 @@ does not, so test on localhost or through the tunnel.
 | `GET /api/arrivals?stops=a,b,c` | Refresh path. Arrivals only, for the cards the client can see |
 | `GET /api/stops?q=` | Search fallback, by code, description or road |
 
-Both stop-list parameters are capped at 25 codes per request so a single caller
+Both stop-list parameters are capped at 8 codes per request so a single caller
 cannot fan out across the whole feed.
 
 ## Design notes
@@ -83,14 +83,14 @@ cannot fan out across the whole feed.
   the safe-area insets, and the search input stays at 16 px so iOS does not
   zoom the page on focus.
 - **One request per paint.** First load is a single `/api/board` call rather
-  than one call to rank stops and fifteen to fill them in. On the 30-second
+  than one call to rank stops and eight to fill them in. On the 30-second
   refresh the client sends only the codes currently on screen (plus pinned
   ones), so a long board does not cost a long board's worth of quota.
 - **No database.** The stop list is a few thousand rows; it is loaded into
   memory on boot, refreshed daily, and both search and nearest-neighbour are
   linear scans. Nothing to keep in sync.
-- **Quota safety.** DataMall is one request per stop, so a 15-stop board is 15
-  requests. They run 5 at a time, are cached for 15s with in-flight
+- **Quota safety.** DataMall is one request per stop, so a full 8-stop board is
+  8 requests. They run 5 at a time, are cached for 15s with in-flight
   de-duplication (concurrent viewers of a stop cost one upstream call), and a
   stop whose call fails degrades to "timings unavailable" instead of blanking
   the board. Background tabs stop polling entirely.

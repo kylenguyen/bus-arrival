@@ -176,8 +176,8 @@ const request = async (path: string, params: Record<string, string> = {}): Promi
  * A network error or timeout — no status at all — counts. That is a judgement
  * call, and the argument for it is that the hung-upstream case is exactly the
  * one an open breaker is worth most in: every attempt otherwise holds a socket
- * for the full 8 s `upstreamTimeoutMs`, five at a time, and a 15-stop board
- * takes 24 s to render nothing. Five consecutive timeouts across every stop on
+ * for the full 8 s `upstreamTimeoutMs`, five at a time, and a full 8-stop board
+ * takes 16 s to render nothing. Five consecutive timeouts across every stop on
  * the board is not a flaky socket, and if it was, the cost of being wrong is a
  * 60 s wait ended early by one probe. `DataMallError`s that carry no status are
  * ours, not the network's ("no AccountKey configured"), and are excluded.

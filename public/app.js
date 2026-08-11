@@ -10,7 +10,7 @@
 const PINS_KEY = 'bus-board.pins.v1';
 const LOC_KEY = 'bus-board.loc.v1';
 
-const NEARBY_LIMIT = 15;
+const NEARBY_LIMIT = 8;
 const REFRESH_MS = 30_000; // arrivals refetch, visible cards only
 const TICK_MS = 10_000; // local re-render so minutes count down between fetches
 const LOC_MAX_AGE_MS = 12 * 60 * 60 * 1000; // cached coordinate still worth a first paint

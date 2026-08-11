@@ -9,9 +9,9 @@ const cache = new TtlCache<ArrivalService[]>(config.arrivalTtlMs);
 export const arrivalsFor = (code: string): Promise<ArrivalService[]> =>
   cache.fetch(code, () => (mockMode ? Promise.resolve(mockArrivals(code)) : fetchArrivals(code)));
 
-// DataMall is one request per stop, so a 15-stop board is 15 requests. Run them
-// a few at a time rather than all at once: the TTL cache absorbs repeat viewers,
-// and a burst of fifteen sockets at one host is what gets an account throttled.
+// DataMall is one request per stop, so a full 8-stop board is 8 requests. Run
+// them a few at a time rather than all at once: the TTL cache absorbs repeat
+// viewers, and a burst of sockets at one host is what gets an account throttled.
 const CONCURRENCY = 5;
 
 /**

@@ -12,8 +12,8 @@ import type { ArrivalsResponse, BoardResponse, BoardStop } from './types.js';
 const STOP_CODE = /^\d{5}$/;
 
 /** Ceiling on stops per request, so one caller cannot fan out to the whole feed. */
-const MAX_STOPS = 25;
-const DEFAULT_NEARBY = 15;
+const MAX_STOPS = 8;
+const DEFAULT_NEARBY = 8;
 
 const stops = new StopIndex();
 
@@ -100,14 +100,14 @@ app.get('/api/board', async (req, res) => {
     }
   }
 
-  // `pinned` is capped at 25 and `limit` is clamped to 25 separately, but
-  // pinned stops are pushed without counting against `limit` — so
-  // ?limit=25&pinned=<25 codes> built a 50-stop board and a 50-call fan-out,
-  // double the ceiling README and AGENTS.md both document as a guarantee. Cut
-  // before the fan-out, not after: truncating the response would leave the
-  // calls already made. Pins are pushed first, so this drops nearby
-  // suggestions before pinned stops. A user with 25 pins gets 25 pinned cards
-  // and no suggestions, which is the stops they explicitly asked for.
+  // `pinned` and `limit` are each capped at MAX_STOPS, but pinned stops are
+  // pushed without counting against `limit` — so ?limit=8&pinned=<8 codes>
+  // built a 16-stop board and a 16-call fan-out, double the ceiling README and
+  // AGENTS.md both document as a guarantee. Cut before the fan-out, not after:
+  // truncating the response would leave the calls already made. Pins are
+  // pushed first, so this drops nearby suggestions before pinned stops. A user
+  // with 8 pins gets 8 pinned cards and no suggestions, which is the stops they
+  // explicitly asked for.
   board.length = Math.min(board.length, MAX_STOPS);
 
   const arrivals = await arrivalsForMany(board.map((stop) => stop.code));

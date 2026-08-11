@@ -167,7 +167,7 @@ These are constraints, not preferences:
 - `LTA_ACCOUNT_KEY` belongs in a Kubernetes Secret. Never commit it, never
   write it into a manifest, never paste it into a chat or issue.
 - Stop codes are validated against `/^\d{5}$/` — the guide documents
-  `BusStopCode` as a 5-digit identifier — and the board is truncated to 25 stops
+  `BusStopCode` as a 5-digit identifier — and the board is truncated to 8 stops
   *before* the fan-out, so one caller cannot fan out across the whole feed.
   Keep both. Pinned stops used to escape the cap; they no longer do.
 
