@@ -42,6 +42,13 @@ spec:
         env:
         - name: PORT
           value: "8080"
+        # V8 sizes its old space from the host's RAM, not the cgroup limit, so on
+        # a large node it will happily plan for more than the 512Mi limit below
+        # and get OOM-killed instead of collecting. Harmless while the heap was
+        # tiny; the address index makes it ~35Mi long-lived plus a transient
+        # spike at startup. 384Mi leaves room for the rest of the RSS.
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=384"
         - name: LTA_ACCOUNT_KEY
           valueFrom:
             secretKeyRef:

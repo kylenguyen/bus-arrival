@@ -11,6 +11,29 @@ export interface NearbyStop extends BusStop {
   distanceM: number;
 }
 
+/**
+ * One row of the address finder. Strings arrive ALL CAPS, as the source dump
+ * spells them: uppercasing the query is one operation, normalising 121k records
+ * would be 121k, and display casing belongs to the client anyway.
+ *
+ * `postal` and `code` are mutually exclusive and either may be null — an address
+ * has a postal code, the 5-digit stop-code escape hatch has a stop code.
+ * `postal` is a string, never a number: `Number('018956')` loses the zero.
+ */
+export interface Place {
+  postal: string | null;
+  code: string | null;
+  building: string;
+  block: string;
+  road: string;
+  lat: number;
+  lon: number;
+}
+
+export interface PlacesResponse {
+  places: Place[];
+}
+
 export type Load = 'SEA' | 'SDA' | 'LSD' | null;
 
 export interface ArrivalBus {

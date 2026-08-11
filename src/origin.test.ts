@@ -43,26 +43,26 @@ describe('origin.js module contract', () => {
 // Function blocks follow in the order of the plan's table; append new ones at
 // the end rather than reordering, so several agents can add to this file.
 
-describe('isUsableStopCoord', () => {
+describe('isUsableCoord', () => {
   it('accepts a normal Singapore coordinate', () => {
-    assert.equal(origin.isUsableStopCoord(1.29684825, 103.85253591), true);
+    assert.equal(origin.isUsableCoord(1.29684825, 103.85253591), true);
   });
 
   it('rejects 0,0 — the stops search() keeps but nearby() drops', () => {
-    assert.equal(origin.isUsableStopCoord(0, 0), false);
+    assert.equal(origin.isUsableCoord(0, 0), false);
   });
 
   it('accepts lat 0 with a non-zero lon, which is a real place', () => {
-    assert.equal(origin.isUsableStopCoord(0, 103.85), true);
-    assert.equal(origin.isUsableStopCoord(1.29, 0), true);
+    assert.equal(origin.isUsableCoord(0, 103.85), true);
+    assert.equal(origin.isUsableCoord(1.29, 0), true);
   });
 
   it('rejects NaN, undefined and strings', () => {
-    assert.equal(origin.isUsableStopCoord(NaN, 103.85), false);
-    assert.equal(origin.isUsableStopCoord(1.29, NaN), false);
-    assert.equal(origin.isUsableStopCoord(undefined, undefined), false);
-    assert.equal(origin.isUsableStopCoord('1.29', '103.85'), false);
-    assert.equal(origin.isUsableStopCoord(Infinity, 103.85), false);
+    assert.equal(origin.isUsableCoord(NaN, 103.85), false);
+    assert.equal(origin.isUsableCoord(1.29, NaN), false);
+    assert.equal(origin.isUsableCoord(undefined, undefined), false);
+    assert.equal(origin.isUsableCoord('1.29', '103.85'), false);
+    assert.equal(origin.isUsableCoord(Infinity, 103.85), false);
   });
 });
 
@@ -99,7 +99,27 @@ describe('formatDistance', () => {
 });
 
 const GPS_RECORD = { mode: 'gps', at: 1_700_000_000_000 };
-const STOP_RECORD = {
+/**
+ * The origin record as it is written from Task 4 onwards. Its coordinate matches
+ * the one `LEGACY_STOP_RECORD` carries, so the `originCoord` and `boardParams`
+ * assertions below are unchanged by the rename.
+ */
+const PLACE_RECORD = {
+  mode: 'place',
+  postal: '310155',
+  code: null,
+  label: 'Blk 155',
+  name: '155 Lorong 1 Toa Payoh',
+  lat: 1.3325,
+  lon: 103.8475,
+};
+/**
+ * What a returning user who came in through the stop-code door still has in
+ * `bus-board.origin.v1`. The key was deliberately not versioned past v1, so this
+ * shape must keep booting to a board rather than to the intro dialog — every
+ * assertion mentioning it is a regression net for exactly that.
+ */
+const LEGACY_STOP_RECORD = {
   mode: 'stop',
   code: '43179',
   description: 'Blk 155',
@@ -113,10 +133,8 @@ describe('readOriginRecord', () => {
     assert.deepEqual(origin.readOriginRecord(JSON.stringify(GPS_RECORD)), GPS_RECORD);
   });
 
-  // Intact, not normalised: `description` and `roadName` are what the chip's
-  // aria-label is built from later, so the guard must not strip them.
-  it('returns a valid stop record intact', () => {
-    assert.deepEqual(origin.readOriginRecord(JSON.stringify(STOP_RECORD)), STOP_RECORD);
+  it('returns a valid place record intact', () => {
+    assert.deepEqual(origin.readOriginRecord(JSON.stringify(PLACE_RECORD)), PLACE_RECORD);
   });
 
   it('returns null when the key is absent', () => {
@@ -143,27 +161,49 @@ describe('readOriginRecord', () => {
     assert.equal(origin.readOriginRecord('{"mode":"walk"}'), null);
   });
 
-  it('returns null for a stop record with no coordinates', () => {
+  // The single highest-value assertion in this file. Dropping the legacy record
+  // instead would send every returning stop-mode user back to the intro dialog —
+  // the exact failure `decideBoot`'s grandfathering exists to prevent — and it
+  // would do it silently, because a reset first visit looks like a first visit.
+  it('migrates a legacy stop record, keeping its coordinate', () => {
+    assert.deepEqual(origin.readOriginRecord(JSON.stringify(LEGACY_STOP_RECORD)), {
+      mode: 'place',
+      postal: null,
+      code: '43179',
+      label: 'Stop 43179',
+      name: 'Blk 155, Lor 1 Toa Payoh',
+      lat: 1.3325,
+      lon: 103.8475,
+    });
+  });
+
+  // The description and road are gone, so the label has to carry the code — but
+  // it is still a rankable coordinate, which is the only thing the board needs.
+  it('migrates a legacy stop record that has nothing but a code', () => {
+    const place = origin.readOriginRecord(
+      '{"mode":"stop","code":"43179","lat":1.33,"lon":103.84}',
+    );
+    assert.equal(place.label, 'Stop 43179');
+    assert.equal(place.name, 'Stop 43179');
+  });
+
+  it('returns null for a legacy stop record with no coordinates', () => {
     assert.equal(origin.readOriginRecord('{"mode":"stop","code":"43179"}'), null);
   });
 
-  it('returns null for a 4-digit code', () => {
+  // Still rejected after the migration, and for a sharper reason than before: a
+  // 4-digit code was never a stop this app wrote, so `Stop 4317` would be a
+  // plausible-looking lie in the masthead rather than a harmless label.
+  it('returns null for a legacy stop record with a 4-digit code', () => {
     assert.equal(
       origin.readOriginRecord('{"mode":"stop","code":"4317","lat":1.33,"lon":103.84}'),
       null,
     );
   });
 
-  it('returns null for a 6-digit code', () => {
-    assert.equal(
-      origin.readOriginRecord('{"mode":"stop","code":"431790","lat":1.33,"lon":103.84}'),
-      null,
-    );
-  });
-
   // The Gulf of Guinea trap: search() keeps 0,0 stops findable, so this record
   // is reachable. Accepting it would rank all of Singapore ~1,300 km away.
-  it('returns null for a stop record at 0,0', () => {
+  it('returns null for a legacy stop record at 0,0', () => {
     assert.equal(origin.readOriginRecord('{"mode":"stop","code":"43179","lat":0,"lon":0}'), null);
   });
 
@@ -174,27 +214,55 @@ describe('readOriginRecord', () => {
     );
   });
 
-  // The property that makes it safe to write the code into the chip. Anything
-  // accepted here is a 5-digit string, so no escaping decision is needed.
-  it('only ever accepts a stop code that is a 5-digit string', () => {
-    const candidates = [
-      '{"mode":"stop","code":"43179","lat":1.33,"lon":103.84}',
-      '{"mode":"stop","code":43179,"lat":1.33,"lon":103.84}',
-      '{"mode":"stop","code":" 43179 ","lat":1.33,"lon":103.84}',
-      '{"mode":"stop","code":"431a9","lat":1.33,"lon":103.84}',
-      '{"mode":"stop","code":"<script>","lat":1.33,"lon":103.84}',
-      '{"mode":"stop","code":null,"lat":1.33,"lon":103.84}',
-      JSON.stringify(STOP_RECORD),
+  it('rejects a place record with no coordinate, at 0,0, or with an empty label', () => {
+    const broken = [
+      { ...PLACE_RECORD, lat: undefined, lon: undefined },
+      { ...PLACE_RECORD, lat: 0, lon: 0 },
+      { ...PLACE_RECORD, label: '' },
+      { ...PLACE_RECORD, label: '   ' },
+      { ...PLACE_RECORD, lat: '1.3325' },
+    ];
+    for (const record of broken) {
+      assert.equal(origin.readOriginRecord(JSON.stringify(record)), null);
+    }
+  });
+
+  // A malformed postal is not a reason to throw away a record with a usable
+  // coordinate and a name on it — it is a reason to stop claiming a postal, which
+  // is all `chipState` needs to know before it speaks "Singapore 310155".
+  it('nulls a non-6-digit postal rather than rejecting the record', () => {
+    for (const postal of ['31015', '3101555', 310155, 'S310155', null]) {
+      const place = origin.readOriginRecord(JSON.stringify({ ...PLACE_RECORD, postal }));
+      assert.equal(place.postal, null);
+      assert.equal(place.label, 'Blk 155');
+    }
+  });
+
+  // The property that replaces "only ever a 5-digit string": what made the old
+  // record safe to interpolate into the chip was its shape, and what makes this
+  // one safe is that the read re-caps and re-collapses on the way out. The chip
+  // is one `white-space: nowrap` flex row, so a newline breaks it silently.
+  it('never returns a label over 18 characters or containing a newline', () => {
+    const raws = [
+      JSON.stringify({ ...PLACE_RECORD, label: 'A'.repeat(200) }),
+      JSON.stringify({ ...PLACE_RECORD, label: 'Blk 155\nOpp The Mall' }),
+      JSON.stringify({ ...PLACE_RECORD, label: `Blk\t155 ${'x'.repeat(200)}\n` }),
+      JSON.stringify({ ...PLACE_RECORD, name: 'N'.repeat(200) }),
+      JSON.stringify({ ...LEGACY_STOP_RECORD, description: 'D'.repeat(200) }),
+      JSON.stringify({ ...LEGACY_STOP_RECORD, roadName: 'Lor 1\nToa Payoh' }),
+      JSON.stringify(PLACE_RECORD),
+      JSON.stringify(LEGACY_STOP_RECORD),
     ];
     let accepted = 0;
-    for (const raw of candidates) {
+    for (const raw of raws) {
       const record = origin.readOriginRecord(raw);
       if (record === null) continue;
       accepted += 1;
-      assert.equal(typeof record.code, 'string');
-      assert.match(record.code, /^\d{5}$/);
+      assert.ok(record.label.length <= 18, `label too long: ${record.label}`);
+      assert.equal(record.label.includes('\n'), false);
+      assert.equal(record.name.includes('\n'), false);
     }
-    assert.equal(accepted, 2); // the two well-formed ones, and only those
+    assert.equal(accepted, raws.length); // every one of them is a usable record
   });
 });
 
@@ -212,15 +280,48 @@ describe('decideBoot', () => {
     assert.equal(decision.persist, false);
   });
 
-  it('sends a valid stop record to the stop journey and hands back the record', () => {
+  it('sends a valid place record to the place journey and hands back the record', () => {
     const decision = origin.decideBoot({
-      originRaw: JSON.stringify(STOP_RECORD),
+      originRaw: JSON.stringify(PLACE_RECORD),
       locRaw: null,
       pinCount: 0,
       now: NOW,
     });
-    assert.equal(decision.journey, 'stop');
-    assert.deepEqual(decision.origin, STOP_RECORD);
+    assert.equal(decision.journey, 'place');
+    assert.deepEqual(decision.origin, PLACE_RECORD);
+  });
+
+  // The regression net for returning users, at the level `app.js` actually reads.
+  // `persist: false` is the point of the assertion as much as the journey is: the
+  // record is usable and wins outright, so this is *not* grandfathering, and a
+  // future change that starts synthesising a gps record here would silently move
+  // every one of these users off the address they chose.
+  it('boots a legacy stop record to the place journey with persist false', () => {
+    const decision = origin.decideBoot({
+      originRaw: JSON.stringify(LEGACY_STOP_RECORD),
+      locRaw: null,
+      pinCount: 0,
+      now: NOW,
+    });
+    assert.equal(decision.journey, 'place');
+    assert.equal(decision.persist, false);
+    assert.equal(decision.origin.mode, 'place');
+    assert.equal(decision.origin.label, 'Stop 43179');
+    assert.equal(decision.origin.lat, 1.3325);
+    assert.equal(decision.origin.lon, 103.8475);
+  });
+
+  // Not the intro, either: a legacy user with no fix and no pins has nothing else
+  // in storage to grandfather them by, so the migrated record is the only thing
+  // standing between them and a first-visit dialog.
+  it('never shows the intro to a legacy stop-record user with nothing else stored', () => {
+    const decision = origin.decideBoot({
+      originRaw: JSON.stringify(LEGACY_STOP_RECORD),
+      locRaw: null,
+      pinCount: 0,
+      now: NOW,
+    });
+    assert.notEqual(decision.journey, 'intro');
   });
 
   it('shows the intro when there is nothing stored at all', () => {
@@ -293,7 +394,7 @@ describe('decideBoot', () => {
     assert.equal(decision.journey, 'intro');
   });
 
-  it('shows the intro for a stop record whose code is valid but sits at 0,0', () => {
+  it('shows the intro for a legacy stop record whose code is valid but sits at 0,0', () => {
     const decision = origin.decideBoot({
       originRaw: '{"mode":"stop","code":"43179","lat":0,"lon":0}',
       locRaw: null,
@@ -318,8 +419,8 @@ describe('decideBoot', () => {
 describe('originCoord', () => {
   const FIX = { lat: 1.3005, lon: 103.8384, at: 1_760_000_000_000 };
 
-  it('returns the stop record’s own coordinate, ignoring the last fix', () => {
-    assert.deepEqual(origin.originCoord(STOP_RECORD, FIX), { lat: 1.3325, lon: 103.8475 });
+  it('returns the place record’s own coordinate, ignoring the last fix', () => {
+    assert.deepEqual(origin.originCoord(PLACE_RECORD, FIX), { lat: 1.3325, lon: 103.8475 });
   });
 
   it('returns the last fix in gps mode', () => {
@@ -349,9 +450,9 @@ describe('boardParams', () => {
     assert.equal(params.get('limit'), '8');
   });
 
-  it('sends the stop record’s coordinate in stop mode', () => {
+  it('sends the place record’s coordinate in place mode', () => {
     const params = parse(
-      origin.boardParams({ origin: STOP_RECORD, lastLoc: FIX, pins: [], limit: 8 }),
+      origin.boardParams({ origin: PLACE_RECORD, lastLoc: FIX, pins: [], limit: 8 }),
     );
     assert.equal(params.get('lat'), '1.3325');
     assert.equal(params.get('lon'), '103.8475');
@@ -416,15 +517,15 @@ describe('shouldRelocateOnFocus', () => {
   });
 
   // The two cases below are the regression net for the highest-ranked risk in
-  // the plan: a stop-mode user usually holds no fix, so a listener testing
+  // the plan: a place-mode user usually holds no fix, so a listener testing
   // `lastLoc` alone asks for their location on every tab focus.
-  it('never re-locates in stop mode with no fix', () => {
-    assert.equal(origin.shouldRelocateOnFocus(STOP_RECORD, null, NOW), false);
+  it('never re-locates in place mode with no fix', () => {
+    assert.equal(origin.shouldRelocateOnFocus(PLACE_RECORD, null, NOW), false);
   });
 
-  it('never re-locates in stop mode however ancient the fix', () => {
+  it('never re-locates in place mode however ancient the fix', () => {
     const ancient = fixAgedMinutes(60 * 24 * 30);
-    assert.equal(origin.shouldRelocateOnFocus(STOP_RECORD, ancient, NOW), false);
+    assert.equal(origin.shouldRelocateOnFocus(PLACE_RECORD, ancient, NOW), false);
   });
 
   it('never re-locates with no origin', () => {
@@ -445,9 +546,13 @@ describe('taglineFor', () => {
     assert.equal(origin.taglineFor(null).includes('nearest you'), false);
   });
 
-  it('names the stop code in stop mode', () => {
-    assert.equal(origin.taglineFor(STOP_RECORD), 'Stops near 43179, live from LTA');
-    assert.match(origin.taglineFor(STOP_RECORD), /43179/);
+  // The long name, not the short label: the tagline has a line to itself, which
+  // is the whole reason `Place` carries two strings.
+  it('names the address in place mode', () => {
+    assert.equal(
+      origin.taglineFor(PLACE_RECORD),
+      'Stops near 155 Lorong 1 Toa Payoh, live from LTA',
+    );
   });
 
   // The mock warning and the tagline make contradictory claims, so only `app.js`
@@ -455,7 +560,7 @@ describe('taglineFor', () => {
   // that this function can never be the one that clobbers the warning.
   it('never returns the mock-mode warning', () => {
     const MOCK = 'Demo data — no LTA API key configured yet';
-    for (const record of [GPS_RECORD, STOP_RECORD, null]) {
+    for (const record of [GPS_RECORD, PLACE_RECORD, null]) {
       assert.notEqual(origin.taglineFor(record), MOCK);
       assert.match(origin.taglineFor(record), /live from LTA$/);
     }
@@ -463,61 +568,19 @@ describe('taglineFor', () => {
 });
 
 describe('gateMessageFor', () => {
-  it('names you in gps mode and the code in stop mode', () => {
+  it('names you in gps mode and the address in place mode', () => {
     assert.equal(origin.gateMessageFor(GPS_RECORD), 'Finding stops near you…');
     assert.equal(origin.gateMessageFor(null), 'Finding stops near you…');
-    assert.equal(origin.gateMessageFor(STOP_RECORD), 'Finding stops near 43179…');
-  });
-});
-
-describe('delistedNote', () => {
-  it('names the code in stop mode and says nothing otherwise', () => {
-    assert.equal(
-      origin.delistedNote(STOP_RECORD),
-      'Stop 43179 is no longer in service. Showing stops near it.',
-    );
-    // Empty rather than "Stop undefined …", so a caller that forgets
-    // shouldShowDelistedNote renders nothing instead of nonsense.
-    assert.equal(origin.delistedNote(GPS_RECORD), '');
-    assert.equal(origin.delistedNote(null), '');
-  });
-});
-
-describe('shouldShowDelistedNote', () => {
-  const nearbyStop = (code: string) => ({ code, pinned: false });
-  const pinnedStop = (code: string) => ({ code, pinned: true });
-
-  it('stays hidden while the origin stop is on the board', () => {
-    const board = [nearbyStop('43179'), nearbyStop('43171')];
-    assert.equal(origin.shouldShowDelistedNote(STOP_RECORD, board), false);
+    assert.equal(origin.gateMessageFor(PLACE_RECORD), 'Finding stops near Blk 155…');
   });
 
-  it('shows when the origin is absent and the board holds nearby stops', () => {
-    const board = [nearbyStop('43171'), nearbyStop('43189')];
-    assert.equal(origin.shouldShowDelistedNote(STOP_RECORD, board), true);
-  });
-
-  // The 8-pin false positive. Pins are pushed first and the board is cut to 8
-  // before the fan-out, so a user with 8 pins gets no nearby slots at all and the
-  // origin stop is missing for a reason that is not delisting.
-  it('stays hidden when every stop on the board is pinned', () => {
-    const board = Array.from({ length: 8 }, (_, i) => pinnedStop(`1000${i}`));
-    assert.equal(origin.shouldShowDelistedNote(STOP_RECORD, board), false);
-  });
-
-  it('stays hidden for an empty board — that is a failed load, not a delisting', () => {
-    assert.equal(origin.shouldShowDelistedNote(STOP_RECORD, []), false);
-  });
-
-  it('stays hidden in gps mode whatever the board holds', () => {
-    assert.equal(origin.shouldShowDelistedNote(GPS_RECORD, [nearbyStop('43171')]), false);
-    assert.equal(origin.shouldShowDelistedNote(null, [nearbyStop('43171')]), false);
-  });
-
-  // The boundary: one non-pinned stop is enough to prove nearby ranking ran.
-  it('shows on exactly one non-pinned stop among pins', () => {
-    const board = [pinnedStop('10001'), pinnedStop('10002'), nearbyStop('43171')];
-    assert.equal(origin.shouldShowDelistedNote(STOP_RECORD, board), true);
+  // The **short** label, unlike the tagline: this sentence sits centred over the
+  // skeleton cards, where a full address wraps to three lines on a 360 px phone
+  // and pushes the placeholders off the first screenful.
+  it('uses the short label rather than the full name', () => {
+    const message = origin.gateMessageFor(PLACE_RECORD);
+    assert.equal(message.includes('Lorong'), false);
+    assert.ok(message.length < origin.taglineFor(PLACE_RECORD).length);
   });
 });
 
@@ -540,32 +603,42 @@ describe('distanceLabel', () => {
     assert.equal(origin.distanceLabel(card('43171', 30), GPS_RECORD), '30 m · 1 min walk');
   });
 
-  it('marks the origin card in stop mode', () => {
-    assert.equal(origin.distanceLabel(card('43179', 0), STOP_RECORD), '(This stop)');
+  // A stop origin refused walking times because the board could be ranked from a
+  // stop the user was nowhere near. A typed address is somewhere they are at or
+  // going to, so the walk is real — and it is the most decision-relevant number
+  // on the card.
+  it('shows metres and a walking time in place mode', () => {
+    assert.equal(origin.distanceLabel(card('43171', 420), PLACE_RECORD), '420 m · 5 min walk');
+    assert.match(origin.distanceLabel(card('43171', 60), PLACE_RECORD), /min walk$/);
   });
 
-  // No walking time in stop mode: the board may be ranked from a stop the user is
-  // nowhere near, so minutes of *their* walking would be unsupported.
-  it('shows metres only on the other cards in stop mode', () => {
-    const label = origin.distanceLabel(card('43171', 60), STOP_RECORD);
-    assert.equal(label, '60 m');
-    assert.equal(label.includes('walk'), false);
+  // `AT_STOP_M` is a statement about GPS fix noise, and a geocoded building has
+  // none: 0 m from a postal code means the stop really is outside that door.
+  it('never says Here in place mode, even at 0 m', () => {
+    assert.equal(origin.distanceLabel(card('43171', 0), PLACE_RECORD), '0 m · 1 min walk');
+    for (const metres of [0, 1, 29, 30, 420]) {
+      assert.equal(origin.distanceLabel(card('43171', metres), PLACE_RECORD).includes('Here'), false);
+    }
   });
 
-  // Matched by code, not by distance: a stop across the road can also be 0 m away
-  // and is still a different stop.
-  it('does not claim "(This stop)" for a co-located stop that is not the origin', () => {
-    assert.equal(origin.distanceLabel(card('43171', 0), STOP_RECORD), '0 m');
+  // The origin marker is gone, not renamed: it named nothing a place origin can
+  // be, and there is no longer a code to match a card against.
+  it('never marks a card as the origin in place mode', () => {
+    for (const metres of [0, 60]) {
+      const label = origin.distanceLabel(card('43179', metres), PLACE_RECORD);
+      assert.equal(label.includes('('), false);
+      assert.equal(label.includes('stop'), false);
+    }
   });
 
   it('returns an empty string when the server sent no distance', () => {
-    assert.equal(origin.distanceLabel(card('43171', null), STOP_RECORD), '');
+    assert.equal(origin.distanceLabel(card('43171', null), PLACE_RECORD), '');
     assert.equal(origin.distanceLabel(card('43171', null), GPS_RECORD), '');
   });
 
   it('returns an empty string when distanceM is missing entirely', () => {
     assert.equal(origin.distanceLabel({ code: '43171' }, GPS_RECORD), '');
-    assert.equal(origin.distanceLabel({ code: '43171' }, STOP_RECORD), '');
+    assert.equal(origin.distanceLabel({ code: '43171' }, PLACE_RECORD), '');
   });
 
   it('returns an empty string with no origin at all', () => {
@@ -577,7 +650,7 @@ describe('distanceLabel', () => {
   // `escape()` in renderShells is the braces.
   it('never puts a raw < in the label, whatever the stop code contains', () => {
     const nasty = card('<script>alert(1)</script>', 60);
-    for (const record of [GPS_RECORD, STOP_RECORD, null]) {
+    for (const record of [GPS_RECORD, PLACE_RECORD, null]) {
       assert.equal(origin.distanceLabel(nasty, record).includes('<'), false);
     }
   });
@@ -589,10 +662,12 @@ describe('noStopsMessage', () => {
     assert.equal(origin.noStopsMessage(null), 'No bus stops found near you.');
   });
 
-  // "near you" would misdescribe a board ranked from a stop the user may be
-  // nowhere near — the wording item 5 left behind for this item to fix.
-  it('names the stop in stop mode', () => {
-    assert.equal(origin.noStopsMessage(STOP_RECORD), 'No bus stops found near 43179.');
+  // "near you" would misdescribe a board ranked from an address the user may be
+  // nowhere near. Short label, like `gateMessageFor`: this sentence lands in the
+  // same centred slot over the same skeleton cards.
+  it('names the address in place mode, by its short label', () => {
+    assert.equal(origin.noStopsMessage(PLACE_RECORD), 'No bus stops found near Blk 155.');
+    assert.equal(origin.noStopsMessage(PLACE_RECORD).includes('Lorong'), false);
   });
 });
 
@@ -701,7 +776,7 @@ describe('dismissGate', () => {
     assert.equal(copy.primary.door, 'gps');
     assert.equal(copy.secondary.door, 'code');
     assert.equal(copy.primary.label, 'Use my current location');
-    assert.equal(copy.secondary.label, 'Enter a stop code');
+    assert.equal(copy.secondary.label, 'Enter an address');
   });
 
   // A dismissal lands on an empty page; the sentence's whole job is to say why,
@@ -728,8 +803,17 @@ describe('dismissGate', () => {
     const copy = origin.dismissGate('unsupported');
     const state = origin.gateState(copy.message, copy.primary, copy.secondary);
     assert.equal(state.primary.hidden, false);
-    assert.equal(state.primary.label, 'Enter a stop code');
+    assert.equal(state.primary.label, 'Enter an address');
     assert.equal(state.secondary.hidden, true);
+  });
+
+  // The same string on the intro's second button, the wait hatch and every
+  // refusal, so the four sites cannot drift apart. `index.html` writes it out by
+  // hand because static markup cannot import.
+  it('uses the one shared label for the address door', () => {
+    assert.equal(origin.ADDRESS_DOOR_LABEL, 'Enter an address');
+    assert.equal(origin.dismissGate('full').secondary.label, origin.ADDRESS_DOOR_LABEL);
+    assert.equal(origin.dismissGate('insecure').primary.label, origin.ADDRESS_DOOR_LABEL);
   });
 });
 
@@ -738,20 +822,32 @@ describe('chipState', () => {
     assert.equal(origin.chipState(GPS_RECORD).label, 'Near you ▾');
   });
 
-  it('names the stop code in stop mode', () => {
-    const { label } = origin.chipState(STOP_RECORD);
-    assert.equal(label, 'Stop 43179 ▾');
-    assert.match(label, /43179/);
+  it('shows the short label and the caret in place mode', () => {
+    assert.equal(origin.chipState(PLACE_RECORD).label, 'Blk 155 ▾');
   });
 
   // The 360 px width decision, pinned as a test rather than left to a comment: the
-  // chip shares one flex row with the h1 and `.ghost` does not wrap, so the
-  // description may only ever reach the screen reader.
-  it('puts the description in the aria-label and never in the label', () => {
-    const { label, ariaLabel } = origin.chipState(STOP_RECORD);
-    assert.match(ariaLabel, /Blk 155/);
-    assert.equal(label.includes('Blk 155'), false);
-    assert.match(ariaLabel, /^Change stops shown/);
+  // chip shares one flex row with the h1 and `.ghost` does not wrap, so the full
+  // address may only ever reach the screen reader. The postal goes with it — it is
+  // the one thing a Singaporean can act on unambiguously.
+  it('puts the full name and the postal in the aria-label and never in the label', () => {
+    const { label, ariaLabel } = origin.chipState(PLACE_RECORD);
+    assert.equal(
+      ariaLabel,
+      'Change stops shown. Currently: stops near 155 Lorong 1 Toa Payoh, Singapore 310155',
+    );
+    assert.equal(label.includes('Lorong'), false);
+    assert.equal(label.includes('310155'), false);
+  });
+
+  // A migrated stop record and a road-only address have no postal. "Singapore
+  // null" read aloud is worse than saying nothing.
+  it('omits the postal from the aria-label when the record has none', () => {
+    const noPostal = { ...PLACE_RECORD, postal: null, name: 'Stop 43179', label: 'Stop 43179' };
+    const { ariaLabel } = origin.chipState(noPostal);
+    assert.equal(ariaLabel, 'Change stops shown. Currently: stops near Stop 43179');
+    assert.equal(ariaLabel.includes('Singapore'), false);
+    assert.equal(ariaLabel.includes('null'), false);
   });
 
   // Before either door is chosen: during the intro, and after it is dismissed.
@@ -763,76 +859,666 @@ describe('chipState', () => {
     assert.ok(label.length > 1);
   });
 
-  it('keeps newlines and the road name out of the visible label', () => {
-    const messy = { ...STOP_RECORD, description: 'Blk 155\nOpp The Mall' };
-    const { label } = origin.chipState(messy);
-    assert.equal(label, 'Stop 43179 ▾');
-    assert.equal(label.includes('\n'), false);
-    assert.equal(label.includes('Lor 1 Toa Payoh'), false);
+  // The layout budget, closed end to end: whatever is in storage, the read caps
+  // the label, so the chip's label is at most 18 characters plus a space and the
+  // caret — and never carries a newline into a nowrap flex row.
+  it('never exceeds 18 characters plus the caret for anything readOriginRecord returns', () => {
+    const raws = [
+      JSON.stringify({ ...PLACE_RECORD, label: 'A'.repeat(200), name: 'B'.repeat(200) }),
+      JSON.stringify({ ...PLACE_RECORD, label: 'Blk 155\nOpp The Mall' }),
+      JSON.stringify({ ...LEGACY_STOP_RECORD, description: 'D'.repeat(200) }),
+      JSON.stringify(PLACE_RECORD),
+      JSON.stringify(GPS_RECORD),
+    ];
+    for (const raw of raws) {
+      const record = origin.readOriginRecord(raw);
+      const { label } = origin.chipState(record);
+      assert.ok(label.length <= 20, `chip label too long: ${label}`);
+      assert.equal(label.includes('\n'), false);
+      assert.equal(label.endsWith('▾'), true);
+    }
   });
 });
 
 describe('commitDecision', () => {
-  const result = (code: string, lat: number, lon: number) => ({
-    code,
-    description: `Blk ${code.slice(0, 3)}`,
-    roadName: 'Lor 1 Toa Payoh',
-    lat,
-    lon,
-  });
-  const RESULTS = [result('43179', 1.3325, 103.8475), result('43171', 1.3319, 103.8468)];
+  // Rows as `finderState` hands them over: each carries a ready `Place`, and the
+  // unrankable ones were already dropped. Fixtures are local rather than the
+  // shared PLACE_* constants below, which are declared later in the file.
+  const row = (place: object) => ({ place });
+  const BLK_155 = {
+    mode: 'place',
+    postal: '310155',
+    code: null,
+    label: 'Blk 155',
+    name: '155 Lorong 1 Toa Payoh',
+    lat: 1.33241,
+    lon: 103.847,
+  };
+  const BLK_159 = { ...BLK_155, postal: '310159', label: 'Blk 159', name: '159 Lorong 1 Toa Payoh' };
+  const STOP = {
+    mode: 'place',
+    postal: null,
+    code: '43179',
+    label: 'Woodlands Int',
+    name: 'Woodlands Int, Woodlands Ave 5',
+    lat: 1.438,
+    lon: 103.7855,
+  };
+  const ROWS = [row(BLK_159), row(BLK_155)];
+  const decide = (input: object) =>
+    origin.commitDecision({ status: 'ok', activeIndex: -1, ...input });
 
-  it('commits five digits that match a result exactly', () => {
-    assert.deepEqual(origin.commitDecision('43179', RESULTS), { action: 'choose', code: '43179' });
+  // By index, not by postal: the caller commits `searchRows[index].place`, and
+  // 310155 is deliberately the *second* row so a decision that ignored the query
+  // and took the top hit could not pass.
+  it('commits six digits that match a row, by index', () => {
+    assert.deepEqual(decide({ value: '310155', rows: ROWS }), { action: 'choose', index: 1 });
   });
 
-  it('names the code it could not find', () => {
-    const decision = origin.commitDecision('43999', RESULTS);
+  // `S310155` is how a Singaporean writes it. The strip has to happen at commit
+  // time as well as in `finderState`, or Enter answers "no address" for a query
+  // the server resolved perfectly.
+  it('accepts the S prefix, with or without a space', () => {
+    assert.deepEqual(decide({ value: 'S310155', rows: ROWS }), { action: 'choose', index: 1 });
+    assert.deepEqual(decide({ value: 's 310155', rows: ROWS }), { action: 'choose', index: 1 });
+    assert.deepEqual(decide({ value: '  310155 ', rows: ROWS }), { action: 'choose', index: 1 });
+  });
+
+  it('names the postal code it could not find', () => {
+    const decision = decide({ value: '310999', rows: ROWS });
     assert.equal(decision.action, 'note');
-    assert.equal(decision.message, 'No stop with code 43999.');
+    assert.equal(decision.message, 'No address at 310999.');
   });
 
-  // One character asks for nothing — `runSearch` will not query below two, because
-  // /api/stops answers 400 — so the only honest answer is how much is needed.
-  it('answers a single character with the five-digit hint', () => {
-    const decision = origin.commitDecision('4', RESULTS);
-    assert.equal(decision.action, 'note');
-    assert.match(decision.message, /5-digit/);
-  });
-
-  it('answers an empty box with the same hint', () => {
-    assert.deepEqual(origin.commitDecision('', []), origin.commitDecision('4', RESULTS));
-  });
-
-  // Committing the top hit would be guessing between stops the user can see and
-  // has deliberately not tapped.
-  it('waits when a name query has hits to tap', () => {
-    assert.deepEqual(origin.commitDecision('Toa Payoh', RESULTS), { action: 'wait' });
-  });
-
-  it('reuses the search wording when a name query has no hits', () => {
-    assert.deepEqual(origin.commitDecision('Atlantis Interchange', []), {
-      action: 'note',
-      message: 'No stops matched.',
-    });
-  });
-
-  // The Gulf of Guinea trap on the commit path. search() keeps 0,0 stops findable
-  // while nearby() drops them, so five digits matching one is a refusal, not a
-  // commit — and it refuses in the same words as an unknown code, because the
-  // difference is not one the user can see.
-  it('refuses five digits matching a stop at 0,0', () => {
-    const decision = origin.commitDecision('99999', [
-      { code: '99999', description: 'Nowhere', roadName: '', lat: 0, lon: 0 },
-    ]);
-    assert.equal(decision.action, 'note');
-    assert.equal(decision.message, 'No stop with code 99999.');
-  });
-
-  it('trims whitespace around five digits and still commits', () => {
-    assert.deepEqual(origin.commitDecision('  43179 ', RESULTS), {
+  // The escape hatch: the address dump is a ~2020 scrape, so in a new estate the
+  // code on the pole may be the only way in.
+  it('commits a five-digit stop code against a row that carries one', () => {
+    assert.deepEqual(decide({ value: '43179', rows: [row(BLK_155), row(STOP)] }), {
       action: 'choose',
-      code: '43179',
+      index: 1,
     });
+    const missing = decide({ value: '43999', rows: [row(STOP)] });
+    assert.equal(missing.action, 'note');
+    assert.equal(missing.message, 'No stop with code 43999.');
+  });
+
+  // A user who typed six digits *and* arrowed down to a row means the row.
+  it('lets a highlighted row outrank a six-digit query', () => {
+    assert.deepEqual(decide({ value: '310155', rows: ROWS, activeIndex: 0 }), {
+      action: 'choose',
+      index: 0,
+    });
+  });
+
+  it('commits a highlighted row on a text query', () => {
+    assert.deepEqual(decide({ value: 'toa payoh', rows: ROWS, activeIndex: 1 }), {
+      action: 'choose',
+      index: 1,
+    });
+  });
+
+  // An async result can be shorter than the list the highlight was set against.
+  // `applyFinder` clamps it, and this is the second line of that defence.
+  it('does not commit an activeIndex beyond the rows', () => {
+    assert.deepEqual(decide({ value: 'toa payoh', rows: ROWS, activeIndex: 7 }), {
+      action: 'wait',
+    });
+  });
+
+  // The net for the flag that used to live in `app.js`: a failed request and a
+  // query that matched nothing produce the same empty list, and only the status
+  // tells them apart. Blaming the address for the network is the failure mode.
+  it('waits and says nothing at all when the search itself failed', () => {
+    for (const value of ['310155', '43179', 'toa payoh', 'x', '']) {
+      assert.deepEqual(
+        origin.commitDecision({ value, rows: [], status: 'offline', activeIndex: -1 }),
+        { action: 'wait' },
+        `offline must not answer for ${JSON.stringify(value)}`,
+      );
+    }
+  });
+
+  // One character asks for nothing — nothing below two ever reaches the request —
+  // so the only honest answer is how much is needed, and in the new units.
+  it('answers a single character with the six-digit hint', () => {
+    const decision = decide({ value: '3', rows: ROWS });
+    assert.equal(decision.action, 'note');
+    assert.match(decision.message, /6-digit/);
+    assert.deepEqual(decide({ value: '', rows: [] }), decision);
+  });
+
+  // Committing the top hit would be guessing between addresses the user can see
+  // and has deliberately not tapped.
+  it('waits when a text query has rows to tap', () => {
+    assert.deepEqual(decide({ value: 'toa payoh', rows: ROWS }), { action: 'wait' });
+  });
+
+  // Byte-identical to the note `finderState` already put under the box: Enter
+  // must not rephrase a fact the user is already reading.
+  it('reuses the finder wording when a text query matched nothing', () => {
+    const panel = origin.finderState({
+      value: 'atlantis interchange',
+      results: [],
+      status: 'ok',
+      recents: [],
+    });
+    assert.deepEqual(decide({ value: 'atlantis interchange', rows: [] }), {
+      action: 'note',
+      message: panel.note,
+    });
+    assert.equal(panel.note, 'No address matched.');
+  });
+});
+
+// --- the postal-code finder ---------------------------------------------
+//
+// Everything below is added by Task 3 of docs/postal-code-finder.md and is
+// unused by the running app until Task 6 wires it. Appended rather than slotted
+// in beside related blocks, per the note at the top of the file.
+
+const PLACE_A = {
+  mode: 'place',
+  postal: '310155',
+  code: null,
+  label: 'Blk 155',
+  name: '155 Lorong 1 Toa Payoh',
+  lat: 1.33241,
+  lon: 103.847,
+};
+const PLACE_B = {
+  mode: 'place',
+  postal: '018956',
+  code: null,
+  label: 'Marina Bay Sands',
+  name: 'Marina Bay Sands, 10 Bayfront Avenue',
+  lat: 1.283761,
+  lon: 103.860719,
+};
+// The stop-code escape hatch, which carries a code and no postal at all.
+const PLACE_STOP = {
+  mode: 'place',
+  postal: null,
+  code: '43179',
+  label: 'Stop 43179',
+  name: 'Stop 43179',
+  lat: 1.3325,
+  lon: 103.8475,
+};
+
+describe('placeFromRow', () => {
+  it('builds label, name and postal from a block-and-road row', () => {
+    assert.deepEqual(
+      origin.placeFromRow({
+        postal: '310155',
+        code: null,
+        building: '',
+        block: '155',
+        road: 'LORONG 1 TOA PAYOH',
+        lat: 1.33241,
+        lon: 103.847,
+      }),
+      PLACE_A,
+    );
+  });
+
+  // A building name is what someone would say out loud, so it outranks the block
+  // even though the block is shorter.
+  it('prefers a building name for the label', () => {
+    const place = origin.placeFromRow({
+      postal: '018956',
+      code: null,
+      building: 'MARINA BAY SANDS',
+      block: '10',
+      road: 'BAYFRONT AVENUE',
+      lat: 1.283761,
+      lon: 103.860719,
+    });
+    assert.equal(place.label, 'Marina Bay Sands');
+    assert.equal(place.name, 'Marina Bay Sands, 10 Bayfront Avenue');
+  });
+
+  it('falls back down the chain: road, then Stop {code}, then S{postal}', () => {
+    const road = origin.placeFromRow({
+      postal: null,
+      code: null,
+      building: '',
+      block: '',
+      road: 'BAYFRONT AVENUE',
+      lat: 1.283761,
+      lon: 103.860719,
+    });
+    assert.equal(road.label, 'Bayfront Avenue');
+
+    assert.deepEqual(
+      origin.placeFromRow({
+        postal: null,
+        code: '43179',
+        building: '',
+        block: '',
+        road: '',
+        lat: 1.3325,
+        lon: 103.8475,
+      }),
+      PLACE_STOP,
+    );
+
+    const postalOnly = origin.placeFromRow({
+      postal: '310155',
+      code: null,
+      building: '',
+      block: '',
+      road: '',
+      lat: 1.33241,
+      lon: 103.847,
+    });
+    assert.equal(postalOnly.label, 'S310155');
+    // No street to describe, so the name is the label rather than an empty
+    // tagline reading "Stops near , live from LTA".
+    assert.equal(postalOnly.name, 'S310155');
+  });
+
+  // The Gulf of Guinea trap again, this time on a scraped address dump: a row
+  // that cannot be ranked from must never reach the list, let alone the chip.
+  it('returns null for 0,0, for a missing coordinate, and for nothing nameable', () => {
+    assert.equal(
+      origin.placeFromRow({ postal: '310155', building: 'X', block: '', road: '', lat: 0, lon: 0 }),
+      null,
+    );
+    assert.equal(
+      origin.placeFromRow({ postal: '310155', building: 'X', block: '', road: '' }),
+      null,
+    );
+    assert.equal(
+      origin.placeFromRow({
+        postal: null,
+        code: null,
+        building: '',
+        block: '',
+        road: '',
+        lat: 1.33,
+        lon: 103.84,
+      }),
+      null,
+    );
+    assert.equal(origin.placeFromRow(null), null);
+  });
+
+  // The chip shares one nowrap flex row with the h1 at 360 px; the ellipsis is
+  // inside the budget, because a cap that overflows by one is not a cap.
+  it('caps the label at 18 characters with an ellipsis', () => {
+    const place = origin.placeFromRow({
+      postal: '018956',
+      code: null,
+      building: 'MARINA BAY SANDS HOTEL TOWER 3',
+      block: '10',
+      road: 'BAYFRONT AVENUE',
+      lat: 1.283761,
+      lon: 103.860719,
+    });
+    assert.equal(place.label.length, 18);
+    assert.equal(place.label.endsWith('…'), true);
+  });
+
+  it('caps the name at 40 characters', () => {
+    const place = origin.placeFromRow({
+      postal: '018956',
+      code: null,
+      building: 'MARINA BAY SANDS HOTEL',
+      block: '10',
+      road: 'BAYFRONT AVENUE',
+      lat: 1.283761,
+      lon: 103.860719,
+    });
+    assert.equal(place.name.length, 40);
+    assert.equal(place.name.endsWith('…'), true);
+  });
+
+  // A newline reaching the chip would break a one-line flex row silently, and
+  // the source is a scrape rather than a curated list.
+  it('collapses newlines, tabs and runs of spaces', () => {
+    const place = origin.placeFromRow({
+      postal: '310165',
+      code: null,
+      building: ' TOA\tPAYOH   HDB\nHUB ',
+      block: '',
+      road: '',
+      lat: 1.3325,
+      lon: 103.8475,
+    });
+    assert.equal(place.label, 'Toa Payoh Hdb Hub');
+    assert.equal(place.label.includes('\n'), false);
+    assert.equal(place.label.includes('\t'), false);
+  });
+
+  // Number('018956') is 18956, which is a different place entirely.
+  it('keeps a leading-zero postal as a string', () => {
+    const place = origin.placeFromRow({
+      postal: '018956',
+      code: null,
+      building: 'MARINA BAY SANDS',
+      block: '',
+      road: '',
+      lat: 1.283761,
+      lon: 103.860719,
+    });
+    assert.equal(typeof place.postal, 'string');
+    assert.equal(place.postal, '018956');
+  });
+
+  // A malformed postal is not a reason to throw away a row that has a building
+  // name and a usable coordinate — it is a reason to stop claiming a postal.
+  it('nulls a 5-digit or non-string postal without dropping the row', () => {
+    for (const postal of ['31015', 310155, null, undefined, '3101555', 'S310155']) {
+      const place = origin.placeFromRow({
+        postal,
+        code: null,
+        building: 'MARINA BAY SANDS',
+        block: '',
+        road: '',
+        lat: 1.283761,
+        lon: 103.860719,
+      });
+      assert.equal(place.postal, null);
+      assert.equal(place.label, 'Marina Bay Sands');
+    }
+  });
+});
+
+describe('readRecents', () => {
+  it('returns an empty list for anything that is not an array of places', () => {
+    for (const raw of [null, '', '{', 'null', '{"postal":"310155"}', '[1,"x",null,{}]']) {
+      assert.deepEqual(origin.readRecents(raw), []);
+    }
+  });
+
+  it('keeps well-formed entries in order', () => {
+    assert.deepEqual(origin.readRecents(JSON.stringify([PLACE_A, PLACE_B])), [PLACE_A, PLACE_B]);
+  });
+
+  // One bad entry costs the user one address, not the whole list — and there is
+  // nothing they could have done about the bad one anyway.
+  it('drops an unrankable entry rather than the whole list', () => {
+    const raw = JSON.stringify([
+      PLACE_A,
+      { mode: 'place', postal: null, code: null, label: 'Nowhere', name: 'Nowhere', lat: 0, lon: 0 },
+      { mode: 'place', postal: null, code: null, label: '', name: '', lat: 1.33, lon: 103.84 },
+      PLACE_B,
+    ]);
+    assert.deepEqual(origin.readRecents(raw), [PLACE_A, PLACE_B]);
+  });
+
+  it('caps the list at five', () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ ...PLACE_A, postal: `31015${i}` }));
+    const recents = origin.readRecents(JSON.stringify(many));
+    assert.equal(recents.length, 5);
+    assert.equal(recents[4].postal, '310154');
+  });
+
+  // Re-capped on read, not only on write: the record may predate a change to
+  // LABEL_MAX, or have been hand-edited in DevTools.
+  it('re-caps an over-long stored label', () => {
+    const raw = JSON.stringify([{ ...PLACE_A, label: 'A'.repeat(40) }]);
+    const [place] = origin.readRecents(raw);
+    assert.equal(place.label.length, 18);
+    assert.equal(place.label.endsWith('…'), true);
+  });
+});
+
+describe('rememberRecent', () => {
+  it('puts the place first', () => {
+    const list = origin.rememberRecent([PLACE_A], PLACE_B);
+    assert.deepEqual(list, [PLACE_B, PLACE_A]);
+  });
+
+  // Moved, not added: five slots are few enough that a duplicate would evict a
+  // different address the user still wants.
+  it('dedupes by postal, moving the existing entry to the front', () => {
+    const again = { ...PLACE_A, label: 'Blk 155 Toa' };
+    const list = origin.rememberRecent([PLACE_A, PLACE_B], again);
+    assert.equal(list.length, 2);
+    assert.equal(list[0].label, 'Blk 155 Toa');
+    assert.deepEqual(list[1], PLACE_B);
+  });
+
+  // A stop row and a road-only row have no postal, so the coordinate is the only
+  // identity they have.
+  it('dedupes by lat,lon when both postals are null', () => {
+    const list = origin.rememberRecent([PLACE_STOP], { ...PLACE_STOP, label: 'Blk 155' });
+    assert.equal(list.length, 1);
+    assert.equal(list[0].label, 'Blk 155');
+  });
+
+  it('caps at five, dropping the oldest', () => {
+    const five = Array.from({ length: 5 }, (_, i) => ({ ...PLACE_A, postal: `31015${i}` }));
+    const list = origin.rememberRecent(five, PLACE_B);
+    assert.equal(list.length, 5);
+    assert.deepEqual(list[0], PLACE_B);
+    assert.equal(list[4].postal, '310153');
+    assert.equal(
+      list.some((place: { postal: string }) => place.postal === '310154'),
+      false,
+    );
+  });
+
+  it('returns the list unchanged for a null place', () => {
+    assert.deepEqual(origin.rememberRecent([PLACE_A, PLACE_B], null), [PLACE_A, PLACE_B]);
+    assert.deepEqual(origin.rememberRecent([PLACE_A], undefined), [PLACE_A]);
+  });
+
+  // The caller keeps the old list in a module variable and writes the returned
+  // one to storage. Mutating in place would make the two indistinguishable, so a
+  // failed write would leave the UI claiming something storage does not hold.
+  it('never mutates the input array', () => {
+    const list = [PLACE_A, PLACE_B];
+    const before = JSON.parse(JSON.stringify(list));
+    const next = origin.rememberRecent(list, PLACE_STOP);
+    assert.deepEqual(list, before);
+    assert.equal(list.length, 2);
+    assert.notEqual(next, list);
+    assert.equal(next.length, 3);
+  });
+});
+
+describe('moveActive', () => {
+  it('moves from nothing highlighted to the first row on the way down', () => {
+    assert.equal(origin.moveActive(-1, 1, 3), 0);
+  });
+
+  it('wraps the last row round to the first', () => {
+    assert.equal(origin.moveActive(2, 1, 3), 0);
+  });
+
+  // Up from nothing highlighted lands on the last row, which is what makes one
+  // key press reach the bottom of a short list.
+  it('moves from nothing highlighted to the last row on the way up', () => {
+    assert.equal(origin.moveActive(-1, -1, 3), 2);
+    assert.equal(origin.moveActive(0, -1, 3), 2);
+  });
+
+  it('stays at nothing highlighted when there are no rows', () => {
+    assert.equal(origin.moveActive(-1, 1, 0), -1);
+    assert.equal(origin.moveActive(0, -1, 0), -1);
+  });
+
+  // A stale index left over from a longer list: the highlight the user was
+  // looking at is gone, so start again rather than land on whatever took its place.
+  it('clamps an out-of-range start', () => {
+    assert.equal(origin.moveActive(9, 1, 3), 0);
+    assert.equal(origin.moveActive(9, -1, 3), 2);
+    assert.equal(origin.moveActive(NaN, 1, 3), 0);
+  });
+});
+
+describe('finderState', () => {
+  const RECENTS = [PLACE_A, PLACE_B];
+  const RESULTS = [{ place: PLACE_A }, { place: PLACE_B }];
+
+  it('shows Recent and nothing else for an empty box', () => {
+    const panel = origin.finderState({ value: '', results: [], status: 'idle', recents: RECENTS });
+    assert.equal(panel.state, 'idle');
+    assert.equal(panel.rows.length, 2);
+    assert.equal(panel.heading, 'Recent');
+    assert.equal(panel.note, '');
+    assert.equal(panel.busy, false);
+    assert.equal(panel.expanded, true);
+    assert.equal(panel.showClear, false);
+  });
+
+  it('asks for one more character at one character, keeping Recent on screen', () => {
+    const panel = origin.finderState({ value: 'T', results: [], status: 'idle', recents: RECENTS });
+    assert.equal(panel.state, 'short');
+    assert.equal(panel.rows.length, 2);
+    assert.equal(panel.heading, 'Recent');
+    assert.equal(panel.note, 'Keep typing — 2 letters, or a 6-digit postal code.');
+    assert.equal(panel.busy, false);
+    assert.equal(panel.expanded, true);
+  });
+
+  // The list must not empty and refill on every keystroke, so a search in flight
+  // keeps whatever is already on screen and says so with aria-busy instead.
+  it('keeps the previous rows while a search is in flight', () => {
+    const panel = origin.finderState({
+      value: 'toa payoh',
+      results: RESULTS,
+      status: 'searching',
+      recents: RECENTS,
+    });
+    assert.equal(panel.state, 'searching');
+    assert.equal(panel.rows.length, 2);
+    assert.deepEqual(panel.rows, RESULTS);
+    assert.equal(panel.heading, '');
+    assert.equal(panel.note, '');
+    assert.equal(panel.busy, true);
+    assert.equal(panel.expanded, true);
+  });
+
+  it('shows the hits when the search comes back with some', () => {
+    const panel = origin.finderState({
+      value: 'toa payoh',
+      results: [{ place: PLACE_A }],
+      status: 'ok',
+      recents: RECENTS,
+    });
+    assert.equal(panel.state, 'results');
+    assert.equal(panel.rows.length, 1);
+    assert.equal(panel.rows[0].place.label, 'Blk 155');
+    assert.equal(panel.heading, '');
+    assert.equal(panel.note, '');
+    assert.equal(panel.busy, false);
+    assert.equal(panel.expanded, true);
+  });
+
+  it('says so when nothing matched, with no rows at all', () => {
+    const panel = origin.finderState({
+      value: 'atlantis interchange',
+      results: [],
+      status: 'ok',
+      recents: RECENTS,
+    });
+    assert.equal(panel.state, 'empty');
+    assert.equal(panel.rows.length, 0);
+    assert.equal(panel.heading, '');
+    assert.equal(panel.note, 'No address matched.');
+    assert.equal(panel.busy, false);
+    assert.equal(panel.expanded, false);
+  });
+
+  // The nicest property of the whole model: with the network down, the addresses
+  // used most are still one tap away and cost no request at all.
+  it('falls back to Recent when the search is unavailable', () => {
+    const panel = origin.finderState({
+      value: 'toa payoh',
+      results: [],
+      status: 'offline',
+      recents: RECENTS,
+    });
+    assert.equal(panel.state, 'offline');
+    assert.equal(panel.rows.length, 2);
+    assert.equal(panel.rows[0].place.label, 'Blk 155');
+    assert.equal(panel.heading, 'Recent');
+    assert.equal(panel.note, 'Search is unavailable right now.');
+    assert.equal(panel.busy, false);
+    assert.equal(panel.expanded, true);
+  });
+
+  it('asks for nothing below two characters and asks at exactly two', () => {
+    const at = (value: string) =>
+      origin.finderState({ value, results: [], status: 'idle', recents: [] }).shouldSearch;
+    assert.equal(at(''), false);
+    assert.equal(at('t'), false);
+    assert.equal(at('to'), true);
+    assert.equal(at('310155'), true);
+  });
+
+  // The S prefix is stripped here rather than at commit time, or the request
+  // never carries the digits the server can resolve.
+  it('normalises the query it hands back', () => {
+    const query = (value: string) =>
+      origin.finderState({ value, results: [], status: 'idle', recents: [] }).query;
+    assert.equal(query('S310155'), '310155');
+    assert.equal(query('s 310155'), '310155');
+    assert.equal(query('  toa   payoh  '), 'toa payoh');
+    assert.equal(query('310155'), '310155');
+  });
+
+  it('shows recents in idle, short and offline, and results in results', () => {
+    const rowsFor = (value: string, status: string, results: unknown[]) =>
+      origin.finderState({ value, results, status, recents: RECENTS }).rows;
+    for (const { value, status } of [
+      { value: '', status: 'idle' },
+      { value: 't', status: 'idle' },
+      { value: 'toa payoh', status: 'offline' },
+    ]) {
+      assert.deepEqual(
+        rowsFor(value, status, []).map((row: { place: { label: string } }) => row.place.label),
+        ['Blk 155', 'Marina Bay Sands'],
+      );
+    }
+    assert.deepEqual(
+      rowsFor('toa payoh', 'ok', [{ place: PLACE_B }]).map(
+        (row: { place: { label: string } }) => row.place.label,
+      ),
+      ['Marina Bay Sands'],
+    );
+  });
+
+  // Filtered before render rather than refused on tap: a row that cannot become
+  // an origin should never have been on screen in the first place.
+  it('drops unrankable results out of the rows', () => {
+    const panel = origin.finderState({
+      value: 'toa payoh',
+      status: 'ok',
+      recents: [],
+      results: [
+        { place: null },
+        { place: { ...PLACE_A, lat: 0, lon: 0 } },
+        { place: PLACE_B },
+        {},
+      ],
+    });
+    assert.equal(panel.rows.length, 1);
+    assert.equal(panel.rows[0].place.label, 'Marina Bay Sands');
+  });
+
+  it('shows the clear button exactly when there is something to clear', () => {
+    const clear = (value: string) =>
+      origin.finderState({ value, results: [], status: 'idle', recents: [] }).showClear;
+    assert.equal(clear(''), false);
+    assert.equal(clear('   '), false);
+    assert.equal(clear('t'), true);
+    assert.equal(clear('310155'), true);
+  });
+
+  // Enter must not rephrase a fact the user is already reading under the box.
+  // `commitDecision` returns this same constant; the block above asserts the two
+  // against each other, and this pins the exact bytes both have to carry.
+  it('uses the exact no-match sentence Enter reuses', () => {
+    const panel = origin.finderState({
+      value: 'atlantis interchange',
+      results: [],
+      status: 'ok',
+      recents: [],
+    });
+    assert.equal(panel.note, 'No address matched.');
   });
 });

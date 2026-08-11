@@ -1,58 +1,79 @@
 // Bus arrival board — no framework, no build step.
 //
 // A first visit opens a dialog with two doors: use my current location, or enter
-// a stop code. Nothing loads and no request fires until one is chosen, because
+// an address. Nothing loads and no request fires until one is chosen, because
 // the site cannot explain itself from behind a native permission prompt. Both
 // doors reduce to a coordinate, and `/api/board` does not care which one it came
-// from — stop mode is "rank stops around a fixed place", not a second rendering
+// from — place mode is "rank stops around a fixed place", not a second rendering
 // path. A returning visit skips the dialog entirely and paints the board from
 // whichever door was used last. Search and pinning stay out of the way until
 // asked for.
 //
-// Three localStorage keys, all client-side; the server is told a coordinate to
+// Four localStorage keys, all client-side; the server is told a coordinate to
 // rank stops by and remembers nothing:
 //   bus-board.pins.v1    stops kept at the top of the board
 //   bus-board.loc.v1     the last GPS fix and its age — the sole owner of both
-//   bus-board.origin.v1  which door: {mode:'gps'} or {mode:'stop', code, lat, lon}
+//   bus-board.origin.v1  which door: {mode:'gps'} or a {mode:'place', …} record
+//   bus-board.recent.v1  the last five addresses committed, most recent first
 //
 // The decisions live in ./origin.js (pure, unit tested); this file is the glue —
 // elements, `fetch`, `localStorage`, event wiring, and one assignment per apply
 // site. Keep new rules on that side of the line.
 
 import {
+  ADDRESS_DOOR_LABEL,
   boardParams,
   chipState,
   commitDecision,
   decideBoot,
-  delistedNote,
   dismissGate,
   distanceLabel,
+  finderState,
   gateMessageFor,
   gateState,
   introVariant,
-  isUsableStopCoord,
+  moveActive,
   noStopsMessage,
   originCoord,
+  placeFromRow,
   readOriginRecord,
+  readRecents,
   refusalCopy,
+  rememberRecent,
+  SEARCH_DEBOUNCE_MS,
   shouldRelocateOnFocus,
-  shouldShowDelistedNote,
   taglineFor,
 } from './origin.js';
 
 const PINS_KEY = 'bus-board.pins.v1';
 const LOC_KEY = 'bus-board.loc.v1';
-// Which door the board is ranked from: {mode:'gps'} or {mode:'stop', code, …}.
+// Which door the board is ranked from: {mode:'gps'}, or a {mode:'place', …}
+// record carrying its own coordinate. The key is deliberately *not* versioned
+// past v1 — `readOriginRecord` migrates the legacy {mode:'stop', …} record it
+// used to hold, because bumping the key would send every returning user of that
+// door back to the intro dialog.
 // LOC_KEY stays the sole owner of the fix and its age, so the gps record carries
 // no coordinate — it is one bit.
 const ORIGIN_KEY = 'bus-board.origin.v1';
+/**
+ * The last five committed addresses, most recent first, no timestamps. Not
+ * configuration — there is nothing here to explain or to set — but a cache of
+ * what the user already did, the same bargain `loc.v1` makes: it removes a round
+ * trip and, more to the point, it is the mitigation for what this finder costs.
+ * A 5-digit stop code is printed on the pole in front of you; a 6-digit postal
+ * code is not, and forgetting it is otherwise a dead end.
+ *
+ * Worth stating rather than inheriting silently: this stores up to five labelled
+ * addresses, plausibly home and work, in cleartext on the device. It is never
+ * transmitted, the server never sees it, and it clears with the other keys.
+ */
+const RECENT_KEY = 'bus-board.recent.v1';
 
 const NEARBY_LIMIT = 8;
 const REFRESH_MS = 30_000; // arrivals refetch, visible cards only
 const TICK_MS = 10_000; // local re-render so minutes count down between fetches
 const LOC_MAX_AGE_MS = 12 * 60 * 60 * 1000; // cached coordinate still worth a first paint
 const MOVED_M = 200; // re-rank the board once the live fix differs by this much
-const SEARCH_DEBOUNCE_MS = 250;
 /**
  * How long a wait for a position runs before the gate also offers the other door.
  * `getPosition` gives up at 12 s and an unanswered permission prompt calls nothing
@@ -69,13 +90,14 @@ const el = {
   finder: document.getElementById('finder'),
   useLocation: document.getElementById('use-location'),
   search: document.getElementById('search'),
+  finderClear: document.getElementById('finder-clear'),
+  resultsHead: document.getElementById('results-head'),
   results: document.getElementById('results'),
   finderNote: document.getElementById('finder-note'),
   gate: document.getElementById('gate'),
   gateMsg: document.getElementById('gate-msg'),
   gateAction: document.getElementById('gate-action'),
   gateAlt: document.getElementById('gate-alt'),
-  boardNote: document.getElementById('board-note'),
   board: document.getElementById('board'),
   status: document.getElementById('status'),
   tagline: document.getElementById('tagline'),
@@ -90,16 +112,37 @@ const el = {
 let pins = readPins();
 /** @type {{lat: number, lon: number, at: number} | null} */
 let lastLoc = readLoc();
-/** @type {{mode: 'gps' | 'stop', code?: string, lat?: number, lon?: number} | null} */
+/** @type {{mode: 'gps' | 'place', label?: string, name?: string, postal?: string | null,
+ *   code?: string | null, lat?: number, lon?: number} | null} */
 let origin = readOrigin();
 /** @type {Array<object>} */
 let board = [];
+/** The last five addresses committed, most recent first. @type {Array<object>} */
+let recents = readRecents(readRaw(RECENT_KEY));
 /**
- * The last search response, parsed. Held here rather than in DOM attributes so a
- * result's coordinate never has to be written into the markup and read back out.
- * @type {Array<{code: string, description: string, roadName: string, lat: number, lon: number}>}
+ * The last search response, already mapped to rows. Held here rather than in DOM
+ * attributes so an address's coordinate never has to be written into the markup
+ * and read back out.
+ * @type {Array<{place: object | null}>}
  */
 let searchResults = [];
+/**
+ * What is actually on screen in `#results` — results, or the Recent list, or
+ * neither. **Written in the same synchronous block as the markup** (see
+ * `applyFinder`), which is the whole reason a `data-index` read off the DOM can
+ * be trusted to address this array and not the one before it.
+ * @type {Array<{place: object}>}
+ */
+let searchRows = [];
+/** The highlighted row, or -1 for none. Arrow keys move it; `moveActive` decides. */
+let activeIndex = -1;
+/**
+ * Where the last request got to. `offline` is the one that earns its keep:
+ * "nothing matched" and "we never got to ask" are different answers and the row
+ * list looks identical from both.
+ * @type {'idle' | 'searching' | 'ok' | 'offline'}
+ */
+let searchStatus = 'idle';
 let shellSignature = '';
 let loadingBoard = false;
 let pendingLoad;
@@ -161,12 +204,29 @@ function readOrigin() {
 }
 
 /**
+ * The mode as it is *written* in storage, which is not always the mode
+ * `readOriginRecord` hands back: exactly one record differs, the legacy
+ * `{mode:'stop', …}` one that migrates to a place on read. `boot()` compares the
+ * two so it can rewrite that record once, rather than re-migrating it on every
+ * visit for the rest of the user's life. Parsed here rather than in `origin.js`
+ * because "what is literally in the key" is a storage fact, not a rule.
+ */
+function storedOriginMode() {
+  try {
+    return JSON.parse(readRaw(ORIGIN_KEY) ?? 'null')?.mode ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The only writer of ORIGIN_KEY. The governing rule — persist an origin only
  * when a coordinate is actually in hand — is enforced by keeping the call sites
- * to four: a successful fix in `startWithLocation()`, a stop chosen from search
- * (via `switchOrigin`), `boot()`'s grandfather branch, and `switchOrigin()`
- * putting back a record whose board would not load. Denials, dismissals and typos
- * persist nothing, which is why a half-finished first run degrades to a first run.
+ * to five: a successful fix in `startWithLocation()`, an address chosen from
+ * search (via `switchOrigin`), `boot()`'s grandfather branch, `boot()`'s
+ * one-off legacy migration, and `switchOrigin()` putting back a record whose
+ * board would not load. Denials, dismissals and typos persist nothing, which is
+ * why a half-finished first run degrades to a first run.
  *
  * Not `locate()`: it only runs when an origin record already exists, so there is
  * nothing there for it to write.
@@ -215,14 +275,8 @@ function note(message) {
   el.finderNote.hidden = !message;
 }
 
-/** The same shape as `note()`, for the line that sits above the board. */
-function boardNote(message) {
-  el.boardNote.textContent = message ?? '';
-  el.boardNote.hidden = !message;
-}
-
 /**
- * Mock mode's warning outranks the tagline: "Stops near 20021, live from LTA"
+ * Mock mode's warning outranks the tagline: "Stops near Toa Payoh, live from LTA"
  * over synthetic timings is a false claim about live data, in exactly the
  * environment used for manual testing.
  */
@@ -312,7 +366,7 @@ function busy(message, { offerCode = false } = {}) {
       // Same sentence, one more way out. The board is not checked here: anything
       // that painted one has already been through `gate()` or `hideGate()`, and
       // both cancel this.
-      gate(message, { label: 'Enter a stop code', onClick: startWithCode });
+      gate(message, { label: ADDRESS_DOOR_LABEL, onClick: startWithCode });
       showSkeleton();
     }, WAIT_HATCH_MS);
   }
@@ -501,8 +555,8 @@ function renderShells() {
   el.board.innerHTML = board
     .map((stop) => {
       // What the distance means depends on the mode, so the cell's whole content
-      // is one decision: a walk from the user, metres from the named stop, or
-      // "(This stop)" on the card the board is ranked from.
+      // is one decision: metres and a walk, or "Here" on the card a gps user is
+      // already standing at.
       const distance = distanceLabel(stop, origin);
       return `
       <article class="card${stop.pinned ? ' pinned' : ''}" data-code="${escape(stop.code)}">
@@ -563,15 +617,6 @@ function stamp(when) {
 }
 
 /**
- * Whether the origin stop is genuinely gone from LTA's list, applied to the line
- * above the board. Two call sites — a fresh board, and a restored one after a
- * failed switch — so the rule is applied in one place rather than mirrored.
- */
-function applyBoardNote() {
-  boardNote(shouldShowDelistedNote(origin, board) ? delistedNote(origin) : '');
-}
-
-/**
  * Loads the board for the current origin. Resolves `true` on a successful load
  * and `false` on the failure path; a load that was coalesced into one already in
  * flight resolves `undefined`, which a caller reads as "not my load".
@@ -586,7 +631,7 @@ async function loadBoard(loc) {
   loadingBoard = true;
   try {
     // The coordinate is resolved from the origin here, not taken from `loc`:
-    // gps mode sends the last fix, stop mode the chosen stop's own coordinate,
+    // gps mode sends the last fix, place mode the chosen address's own coordinate,
     // and no caller gets to pick the wrong one. `loc` survives only as the
     // coalescing value above and the retry closure below.
     const coord = originCoord(origin, lastLoc);
@@ -597,12 +642,11 @@ async function loadBoard(loc) {
     const data = await res.json();
 
     board = data.stops ?? [];
-    applyBoardNote();
     if (board.length > 0) hideGate();
     else if (coord) {
       gate(noStopsMessage(origin), {
         label: 'Try again',
-        // Only a gps origin is worth sending back to geolocation; in stop mode the
+        // Only a gps origin is worth sending back to geolocation; in place mode the
         // retry re-runs the same load.
         onClick: origin?.mode === 'gps' ? () => void locate(true) : () => void loadBoard(coord),
       });
@@ -710,7 +754,7 @@ function getPosition() {
  * The early return is what stops a returning visitor who revoked the permission
  * from being nagged: their cached board is already on screen and useful, so a
  * refusal is not worth interrupting it for. It applies only to attempts nothing
- * asked for. A tap is always answered — a stop-mode user pressing "Use my current
+ * asked for. A tap is always answered — a place-mode user pressing "Use my current
  * location" over a working board would otherwise get silence, which reads as a
  * broken button rather than as a blocked permission.
  *
@@ -722,7 +766,7 @@ function onLocationRefused(err, explicit = false) {
   if (!explicit && board.length > 0) return; // already showing something useful
   gate(
     refusalCopy(err).message,
-    { label: 'Enter a stop code', onClick: startWithCode },
+    { label: ADDRESS_DOOR_LABEL, onClick: startWithCode },
     // Not `locate()`: it returns early unless the origin is already gps, and it
     // awaits the permissions pre-check before asking for a position, which spends
     // the click's transient activation on iOS. Same path as the intro's button.
@@ -736,7 +780,7 @@ function onLocationRefused(err, explicit = false) {
  * empty profile to `showIntro()` and never falls through to here, so every caller
  * left — `boot()`'s gps branch, the focus handler via `shouldRelocateOnFocus`, and
  * the empty-board retry — already holds a gps origin. It exists because the other
- * two would otherwise ask a stop-mode user for their location.
+ * two would otherwise ask a place-mode user for their location.
  *
  * Nothing is persisted on success: an origin record is the precondition for
  * getting here, so it is already in storage.
@@ -781,28 +825,157 @@ async function locate(force = false) {
   }
 }
 
-// --- search fallback ----------------------------------------------------
+// --- the address finder -------------------------------------------------
 
 /** The pending keystroke debounce, or null when no search is waiting to fire. */
 let debounce = null;
+/** The normalised query that debounce is holding, so the Enter flush asks for
+ *  the same thing the timer would have. */
+let pendingQuery = '';
 /**
- * The last search request failed outright, rather than matching nothing. The two
- * are different answers and `commitDecision` cannot tell them apart — it is handed
- * a result list, and "empty because nothing matched" looks identical from there to
- * "empty because we never got to ask". Enter reads this before overwriting the
- * note, so an offline commit does not blame the stop for the network.
+ * The request already out, or null. Enter waits on this as well as on the
+ * debounce: a query whose timer has fired but whose answer has not landed would
+ * otherwise be decided against the *previous* query's rows, which answers "No
+ * address at 310155." for an address the server is at that moment returning.
  */
-let searchUnavailable = false;
+let inFlight = null;
+/** Request ordering: only the newest sequence number may write a result. */
+let searchSeq = 0;
 
 /** Ticks the location button when gps is the mode the board is already using. */
 function applyModePressed() {
   el.useLocation.setAttribute('aria-pressed', String(origin?.mode === 'gps'));
 }
 
+/**
+ * The only place that knows the endpoint: the URL, the response key and the row
+ * mapping all live here, so a change to any of them is a change to one function.
+ *
+ * Rows come back already converted — each carries a ready `Place`, or `null` for
+ * one the board could not be ranked from — because `finderState` filters on that
+ * and `choosePlace` commits it with no second lookup.
+ */
+async function fetchPlaces(query) {
+  const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error(String(res.status));
+  const data = await res.json();
+  return (data.places ?? []).map((row) => ({ place: placeFromRow(row) }));
+}
+
+/**
+ * The whole panel, applied. `finderState` decides all six states and every
+ * attribute below; this is a run of one-line assignments with no branch left in
+ * it, which is what keeps the rules testable.
+ *
+ * **`searchRows` and the markup are written together, here, and nowhere else.**
+ * That is the invariant the commit path rests on: rows carry `data-index`, not a
+ * code, so an index read off the DOM must always address the array that produced
+ * that DOM. Split these two statements across an `await` and a fast typist
+ * commits the wrong address.
+ *
+ * The clamp is the other half of it. An async result can be shorter than the list
+ * a highlight was set against, so an `activeIndex` past the end drops to -1 at
+ * the single point where rows are assigned rather than at each reader.
+ */
+function applyFinder() {
+  const panel = finderState({
+    value: el.search.value,
+    results: searchResults,
+    status: searchStatus,
+    recents,
+  });
+
+  searchRows = panel.rows;
+  if (activeIndex >= searchRows.length) activeIndex = -1;
+  renderRows(searchRows);
+
+  el.results.hidden = !panel.expanded;
+  // The list's visibility and the combobox's `aria-expanded` are the same fact
+  // told twice: a combobox that never reports itself expanded is worse than one
+  // with no role at all, because assistive technology then announces a list it
+  // has been told is not there.
+  el.search.setAttribute('aria-expanded', String(panel.expanded));
+  el.results.setAttribute('aria-busy', String(panel.busy));
+  el.resultsHead.textContent = panel.heading;
+  el.resultsHead.hidden = panel.heading === '';
+  note(panel.note);
+  el.finderClear.hidden = !panel.showClear;
+  setActive(activeIndex);
+
+  return panel;
+}
+
+/**
+ * The one `innerHTML` site in the finder, and both interpolated fields are
+ * escaped: the addresses come from a scraped dump, which is untrusted data by
+ * definition.
+ *
+ * `role="option"` with **no inner button**, deliberately. An option must not
+ * contain interactive content, and DOM focus has to stay in the input or a phone
+ * keyboard closes mid-typing — activation is a delegated click plus Enter, and
+ * the highlight travels by `aria-activedescendant` instead.
+ *
+ * The long `name` leads, because a row has a whole line to itself; `label` is for
+ * the places that share one. The postal code goes underneath, which is the thing
+ * a Singaporean can act on unambiguously.
+ */
+function renderRows(rows) {
+  el.results.innerHTML = rows
+    .map(({ place }, index) => {
+      const detail = place.postal
+        ? `Singapore ${place.postal}`
+        : place.code
+          ? `Stop ${place.code}`
+          : '';
+      return `
+        <li class="result-row" id="opt-${index}" role="option" data-index="${index}"
+            aria-selected="false">
+          <span class="result-primary">${escape(place.name)}</span>
+          ${detail ? `<span class="result-secondary">${escape(detail)}</span>` : ''}
+        </li>`;
+    })
+    .join('');
+}
+
+/**
+ * Moves the highlight. `aria-activedescendant` is what tells a screen reader
+ * which option is current while DOM focus stays in the input; `aria-selected`
+ * is what a sighted user sees, through the CSS.
+ */
+function setActive(index) {
+  const options = el.results.children;
+  for (let i = 0; i < options.length; i += 1) {
+    options[i].setAttribute('aria-selected', String(i === index));
+  }
+  const active = index >= 0 ? options[index] : null;
+  el.search.setAttribute('aria-activedescendant', active ? active.id : '');
+  // `nearest` and not `center`: the list scrolls inside its own box, and a
+  // highlight one row down should not jump the box halfway.
+  active?.scrollIntoView({ block: 'nearest' });
+}
+
+/**
+ * The Recent list, updated. Called from `switchOrigin` on the success path only:
+ * an address whose board would not load is not worth offering again next time.
+ */
+function rememberPlace(place) {
+  recents = rememberRecent(recents, place);
+  write(RECENT_KEY, recents);
+}
+
+/**
+ * Opens the panel and puts the Recent list on screen with it — that is what an
+ * empty box now shows instead of nothing.
+ *
+ * **Synchronous, and it must stay that way.** `startWithCode` calls this from a
+ * click, and an `await` anywhere on that path spends the transient activation
+ * iOS Safari needs for the location button one panel up.
+ */
 function openSearch() {
   el.finder.hidden = false;
   el.originChip.setAttribute('aria-expanded', 'true');
   applyModePressed();
+  applyFinder();
   el.search.focus();
 }
 
@@ -815,71 +988,70 @@ function closeSearch() {
 
   // A keystroke still in the debounce would otherwise fire into a closed panel and
   // repopulate `searchResults` after they were cleared, leaving Enter to commit
-  // against a list nobody can see.
+  // against a list nobody can see. A request already out is retired the same way,
+  // by moving the sequence number past it — it cannot be cancelled, only ignored.
   clearTimeout(debounce);
   debounce = null;
+  searchSeq += 1;
 
   el.finder.hidden = true;
   el.originChip.setAttribute('aria-expanded', 'false');
   applyModePressed();
-  el.results.hidden = true;
-  el.results.innerHTML = '';
+
+  // Collapsed by hand rather than through `applyFinder`: the box may still hold
+  // text at this point (`switchOrigin` clears it afterwards), and rendering the
+  // panel's own idea of itself would report `aria-expanded="true"` on a section
+  // that is now hidden.
   searchResults = [];
-  searchUnavailable = false;
+  searchRows = [];
+  searchStatus = 'idle';
+  activeIndex = -1;
+  el.results.hidden = true;
+  el.search.setAttribute('aria-expanded', 'false');
+  el.search.setAttribute('aria-activedescendant', '');
+  el.results.innerHTML = '';
+  el.resultsHead.hidden = true;
+  el.resultsHead.textContent = '';
+  el.finderClear.hidden = true;
   note('');
 
   if (wasOpen) el.originChip.focus();
 }
 
-let searchSeq = 0;
-
+/**
+ * One request, and the panel repainted around whatever comes back. `searchSeq`
+ * and the debounce stay glue on purpose — they are mutable request ordering and
+ * there is nothing pure about them.
+ *
+ * Always go through `startSearch`, never straight to this: the promise it keeps
+ * is what Enter waits on.
+ */
 async function runSearch(query) {
-  // Below two characters there is nothing to ask for: `/api/stops` answers 400.
-  if (query.trim().length < 2) {
-    el.results.hidden = true;
-    searchResults = [];
-    searchUnavailable = false;
-    note('');
-    return;
-  }
   const seq = ++searchSeq;
+  searchStatus = 'searching';
+  applyFinder();
   try {
-    const res = await fetch(`/api/stops?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error(String(res.status));
-    const data = await res.json();
+    const rows = await fetchPlaces(query);
     if (seq !== searchSeq) return; // a newer keystroke already won
-
-    const stops = data.stops ?? [];
-    // Kept whole, before rendering: `chooseStop` needs each result's coordinate,
-    // and holding the array here keeps coordinates out of DOM attributes.
-    searchResults = stops;
-    searchUnavailable = false;
-    if (stops.length === 0) {
-      el.results.hidden = true;
-      note('No stops matched.');
-      return;
-    }
-    el.results.innerHTML = stops
-      .map(
-        (stop) => `
-        <li>
-          <button class="result-btn" type="button" data-code="${escape(stop.code)}">
-            <span class="result-code">${escape(stop.code)}</span>
-            <span class="result-name">${escape(stop.description)}
-              <span class="result-road">${escape(stop.roadName)}</span>
-            </span>
-          </button>
-        </li>`,
-      )
-      .join('');
-    el.results.hidden = false;
-    note('');
+    searchResults = rows;
+    searchStatus = 'ok';
   } catch {
-    if (seq === searchSeq) {
-      searchUnavailable = true;
-      note('Search is unavailable right now.');
-    }
+    if (seq !== searchSeq) return;
+    // The rows are left alone: `offline` shows Recent instead, and a transient
+    // failure should not throw away an answer the user may still want.
+    searchStatus = 'offline';
   }
+  applyFinder();
+}
+
+/** `runSearch`, with the promise kept so Enter can wait on it. `runSearch` never
+ *  rejects — it turns a failure into the `offline` state — so this needs no catch. */
+function startSearch(query) {
+  const pending = runSearch(query).finally(() => {
+    if (inFlight === pending) inFlight = null;
+  });
+  inFlight = pending;
+  return pending;
 }
 
 /**
@@ -888,34 +1060,40 @@ async function runSearch(query) {
  *
  * The flush is not optional. Enter arrives on the same reach as the last digit, so
  * a 250 ms debounce is routinely still pending when it lands — and deciding against
- * the results from four digits ago answers "No stop with code 43179." for a stop
+ * the results from four digits ago answers "No address at 310155." for an address
  * that exists. Awaiting the search first costs nothing here: no transient
  * activation is at stake on this path (that constraint belongs to
- * `startWithLocation`), and `runSearch` still asks for nothing below two
- * characters, so a one-character query fires no request.
+ * `startWithLocation`), and nothing below two characters ever reaches the timer,
+ * so a one-character query still fires no request.
  */
-async function commitSearch(value) {
+async function commitSearch() {
   if (debounce !== null) {
     clearTimeout(debounce);
     debounce = null;
-    await runSearch(value);
+    await startSearch(pendingQuery);
+  } else if (inFlight) {
+    // The timer already fired and the answer is on its way. Deciding now would
+    // decide against the query before this one.
+    await inFlight;
   }
 
-  // The box already explains that the search itself failed; "No stop with code
-  // 43179." would replace that with a claim about the stop.
-  if (searchUnavailable) return;
-
-  const decision = commitDecision(value, searchResults);
+  const decision = commitDecision({
+    value: el.search.value,
+    rows: searchRows,
+    status: searchStatus,
+    activeIndex,
+  });
   switch (decision.action) {
     case 'choose':
-      chooseStop(decision.code);
+      choosePlace(searchRows[decision.index]?.place);
       break;
     case 'note':
       note(decision.message);
       break;
     default:
-      // 'wait' — several stops matched a name and the list is on screen. Picking
-      // the first one would be guessing on the user's behalf.
+      // 'wait' — either the search itself failed, or several addresses matched a
+      // name and the list is on screen. Picking the first one would be guessing
+      // on the user's behalf.
       break;
   }
 }
@@ -938,29 +1116,22 @@ function togglePin(code) {
 // --- choosing an origin -------------------------------------------------
 
 /**
- * A tapped search result becomes the origin. This replaced pin-on-tap: a tap now
- * re-ranks the board around that stop rather than adding a ninth card to it, and
- * ★ is still how a stop is pinned.
+ * A chosen row becomes the origin. This replaced pin-on-tap: a tap now re-ranks
+ * the board around that address rather than adding a ninth card to it, and ★ is
+ * still how a stop is pinned.
+ *
+ * There is no shaping and no lookup left here. Every row already carries a
+ * `Place` built by `placeFromRow` inside `fetchPlaces`, and `finderState` dropped
+ * the rows that had none — an address a board cannot be ranked from is never put
+ * on screen in the first place, rather than refused after it is tapped.
+ *
+ * The guard is for one case only: an index that no longer addresses a row,
+ * because the list was rewritten between the tap and this call. There is nothing
+ * to say about it — the panel in front of the user is already the correction.
  */
-function chooseStop(code) {
-  const stop = searchResults.find((s) => s.code === code);
-  if (!stop || !isUsableStopCoord(stop.lat, stop.lon)) {
-    // A real `0,0` stop: `search()` keeps those findable while `nearby()` drops
-    // them, so a result can be perfectly tappable and still impossible to rank
-    // from. The "no such stop" wording is reused rather than a second sentence
-    // invented for a distinction the user has no way to see. `commitDecision`
-    // returns this same sentence for the Enter path — keep the two in step.
-    note(`No stop with code ${code}.`);
-    return;
-  }
-  void switchOrigin({
-    mode: 'stop',
-    code: stop.code,
-    description: stop.description,
-    roadName: stop.roadName,
-    lat: stop.lat,
-    lon: stop.lon,
-  });
+function choosePlace(place) {
+  if (!place) return;
+  void switchOrigin(place);
 }
 
 /**
@@ -988,18 +1159,21 @@ async function switchOrigin(next) {
   el.search.value = '';
   writeOrigin(next);
   resetBoard();
-  boardNote('');
   // No hatch: this wait is on `/api/board`, which answers or fails and raises its
   // own retry, and the door being offered is the one the user just came through.
   busy(gateMessageFor(origin));
 
   const loaded = await loadBoard(originCoord(origin, lastLoc));
-  if (loaded !== false) return;
+  if (loaded !== false) {
+    // Only once a board actually stands: an address that cannot be ranked from
+    // is not worth offering back to the user next time they open the panel.
+    rememberPlace(next);
+    return;
+  }
 
   writeOrigin(previousOrigin);
   shellSignature = '';
   render();
-  applyBoardNote();
   gate('Could not load stops. Check your connection.', {
     label: 'Try again',
     onClick: () => void switchOrigin(next),
@@ -1098,14 +1272,14 @@ async function startWithLocation() {
   try {
     const coords = await getPosition();
     rememberLoc(coords.latitude, coords.longitude);
-    // Leaving stop mode: the shells have to be thrown away even though the load
+    // Leaving place mode: the shells have to be thrown away even though the load
     // below may return the very same stops in the very same order — which is
-    // exactly what happens for someone standing at the stop they had named.
-    // `shellSignature` does not encode the mode, so without this the cards keep
-    // "(This stop)" and bare metres where walking times now belong. `switchOrigin`
-    // resets for the same reason; this path does not go through it. Deliberately
-    // after the fix rather than before, so a 12-second wait for a GPS that may
-    // never arrive does not blank a board that is still true.
+    // exactly what happens for someone standing at the address they had named.
+    // `shellSignature` does not encode the mode, so without this the nearest card
+    // keeps a walking time where "Here" now belongs. `switchOrigin` resets for the
+    // same reason; this path does not go through it. Deliberately after the fix
+    // rather than before, so a 12-second wait for a GPS that may never arrive does
+    // not blank a board that is still true.
     if (origin?.mode !== 'gps') resetBoard();
     // Whatever the reset left behind, the load below is still a wait: refill it
     // rather than leaving the gate's sentence over an empty page for a round trip.
@@ -1121,7 +1295,7 @@ async function startWithLocation() {
 }
 
 /**
- * The stop-code door: the dialog's second button, and the same door offered again on
+ * The address door: the dialog's second button, and the same door offered again on
  * the dismissal gate and on a refusal. Persists nothing and asks for nothing — there
  * is no coordinate in hand yet, so under the governing rule there is no origin to
  * write, and the dialog is right to come back next reload.
@@ -1169,24 +1343,73 @@ el.originChip.addEventListener('click', () => {
 // rule above `getPosition` covers this click too.
 el.useLocation.addEventListener('click', () => void startWithLocation());
 
-el.search.addEventListener('input', (event) => {
+el.search.addEventListener('input', () => {
   clearTimeout(debounce);
-  const value = event.target.value;
-  debounce = setTimeout(() => {
-    // Cleared before the call, so `debounce` means "a search is still pending"
-    // and `commitSearch` can tell whether it has anything to flush.
-    debounce = null;
-    void runSearch(value);
-  }, SEARCH_DEBOUNCE_MS);
+  debounce = null;
+
+  const panel = applyFinder();
+  if (panel.shouldSearch) {
+    pendingQuery = panel.query;
+    debounce = setTimeout(() => {
+      // Cleared before the call, so `debounce` means "a search is still pending"
+      // and `commitSearch` can tell whether it has anything to flush.
+      debounce = null;
+      void startSearch(pendingQuery);
+    }, SEARCH_DEBOUNCE_MS);
+    return;
+  }
+
+  // Below two characters nothing will be asked for, so the previous answer goes
+  // with the query it answered — otherwise a backspace leaves "No address
+  // matched." under a box that is no longer searching for anything. No repaint
+  // is needed for it: `finderState` reads neither `results` nor `status` once
+  // the query is that short.
+  searchResults = [];
+  searchStatus = 'idle';
 });
 
-// `enterkeyhint="search"` is what puts this key on a phone keyboard; this is what
-// it does. `preventDefault` because the input has no form to submit and Safari
-// would otherwise treat Enter as a native search-field commit.
+/**
+ * Empties the box without closing the panel. **Synchronous throughout, and it must
+ * stay that way** — this is a click handler, and an `await` anywhere on it spends
+ * the transient activation that the location button one panel up still needs (see
+ * the iOS note in AGENTS.md). Nothing here needs the network, so there is nothing
+ * to await.
+ *
+ * The debounce is cancelled first: a keystroke still pending would otherwise fire
+ * 250 ms later and repopulate the list the user just cleared. `focus()` is last, so
+ * the phone keyboard never drops — clearing a typo and retyping is one gesture.
+ *
+ * It empties the box back to the idle panel rather than to nothing, so the Recent
+ * list is what a cleared field shows.
+ */
+el.finderClear.addEventListener('click', () => {
+  clearTimeout(debounce);
+  debounce = null;
+  el.search.value = '';
+  searchResults = [];
+  searchStatus = 'idle';
+  activeIndex = -1;
+  applyFinder();
+  el.search.focus();
+});
+
+// `enterkeyhint="search"` is what puts Enter on a phone keyboard; this is what it
+// does. `preventDefault` because the input has no form to submit and Safari would
+// otherwise treat Enter as a native search-field commit.
+//
+// The arrows move the highlight and wrap at both ends, which `moveActive` decides.
+// They `preventDefault` too: in a text field the browser would otherwise send the
+// caret to one end of the query instead.
 el.search.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    activeIndex = moveActive(activeIndex, event.key === 'ArrowDown' ? 1 : -1, searchRows.length);
+    setActive(activeIndex);
+    return;
+  }
   if (event.key !== 'Enter') return;
   event.preventDefault();
-  void commitSearch(event.target.value);
+  void commitSearch();
 });
 
 // Escape closes the panel. The dialog handles its own Escape natively and its
@@ -1199,9 +1422,13 @@ document.addEventListener('keydown', (event) => {
   closeSearch();
 });
 
+// Delegated, and by index rather than by code: an address has no unique key the
+// client knows, and `applyFinder` writes `searchRows` and this markup in one
+// synchronous block so the index can only ever address the array behind it.
 el.results.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-code]');
-  if (button) chooseStop(button.dataset.code);
+  const row = event.target.closest('[data-index]');
+  if (!row) return;
+  choosePlace(searchRows[Number(row.dataset.index)]?.place);
 });
 
 el.board.addEventListener('click', (event) => {
@@ -1212,7 +1439,7 @@ el.board.addEventListener('click', (event) => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   // Coming back after a while: re-check where we are before re-checking times.
-  // This used to test `lastLoc` alone, which asked a stop-mode user — who
+  // This used to test `lastLoc` alone, which asked a place-mode user — who
   // usually holds no fix at all — for their location on every single focus.
   if (shouldRelocateOnFocus(origin, lastLoc, Date.now())) void locate();
   else void refreshArrivals();
@@ -1235,11 +1462,19 @@ function boot() {
 
   if (decision.persist) {
     writeOrigin(decision.origin);
+  } else if (decision.origin?.mode === 'place' && storedOriginMode() !== 'place') {
+    // The legacy `{mode:'stop'}` record, migrated. `decideBoot` says
+    // `persist: false` — correctly, because a returning user is not being
+    // grandfathered, they already had a door — but the migrated record is worth
+    // writing back once so the next visit reads a place record directly. The
+    // coordinate is already in hand, so the governing rule is satisfied.
+    // `writeOrigin` applies the tagline and the chip on its way through.
+    writeOrigin(decision.origin);
   } else {
     origin = decision.origin;
-    // A returning stop-mode visitor persists nothing on boot, so the tagline and
+    // A returning place-mode visitor persists nothing on boot, so the tagline and
     // the chip have to be applied here too — otherwise the masthead claims "stops
-    // nearest you" over a board ranked around a stop they may be nowhere near.
+    // nearest you" over a board ranked around an address they may be nowhere near.
     applyTagline();
     renderChip();
   }
@@ -1251,7 +1486,7 @@ function boot() {
     return;
   }
 
-  if (decision.journey === 'stop') {
+  if (decision.journey === 'place') {
     // No hatch: nothing here is waiting on a position, only on `/api/board`.
     busy(gateMessageFor(origin));
     void loadBoard(originCoord(origin, lastLoc));

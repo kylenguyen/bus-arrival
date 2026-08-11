@@ -23,9 +23,11 @@ Two rules follow, and they decide arguments:
 ## What this is
 
 A single-page bus arrival board for Singapore. A commuter opens the page, picks
-one of two doors — current location, or a stop code they already know — and sees
-the 8 nearest stops to it with what is coming, when, and how full it is. No
-sign-up and no settings.
+one of two doors — current location, or an address they already know — and sees
+the 8 nearest stops to it with what is coming, when, and how full it is. An
+address is a 6-digit postal code, a building or a road, searched against a
+committed file of 121,360 of them; a 5-digit stop code still resolves as an
+escape hatch, because that file is a ~2020 scrape. No sign-up and no settings.
 
 The dialog on the first visit is the **entry choice**, not onboarding and not a
 settings screen. It is there because the board cannot rank anything without a
@@ -51,22 +53,40 @@ convenience for capability, the default answer is no. Concretely:
 
 - First paint should be one network round trip. `/api/board` returns stops and
   arrivals together for exactly that reason — do not split it back apart.
-- No login, no account, no server-side user state. Three `localStorage` keys, and
+- No login, no account, no server-side user state. Four `localStorage` keys, and
   the server stores nothing about anyone:
   - `bus-board.pins.v1` — the pinned stops. Orthogonal to the rest: a pin is not
     a door, and changing door leaves them alone.
   - `bus-board.loc.v1` — the last GPS fix and its age, and the **sole** owner of
     both. The 12 h cached-paint window, the 5-minute focus re-locate and the
     200 m re-rank all read this key and only this key, which is why all three
-    went through the two-door change untouched.
+    went through the two-door change and the finder change untouched.
   - `bus-board.origin.v1` — which door the board is ranked from: `{mode:'gps'}`,
-    or `{mode:'stop', code, description, roadName, lat, lon}`. Written only when
-    a coordinate is actually in hand — a fix, or a stop chosen from search — so a
-    denial or a dismissal leaves a first visit still a first visit. The gps
-    record carries **no coordinate, on purpose**: it is one bit, and a second
-    copy of the fix would be a second thing to keep in step with `loc.v1`. Read
-    a coordinate with `originCoord(origin, lastLoc)`; never store one here, and
-    never read the fix from anywhere but `loc.v1`.
+    or `{mode:'place', postal, code, label, name, lat, lon, at}`. Written only
+    when a coordinate is actually in hand — a fix, or an address chosen from
+    search — so a denial or a dismissal leaves a first visit still a first visit.
+    The place record **does** carry its own coordinate, on purpose and unlike the
+    gps one: it is a fixed point the user named, not a fix, and it must not
+    expire, move, or cost a geocode to read back. The gps record carries **no**
+    coordinate for the mirror-image reason — it is one bit, and a second copy of
+    the fix would be a second thing to keep in step with `loc.v1`. Read a
+    coordinate with `originCoord(origin, lastLoc)`; never put a *fix* in here,
+    and never read the fix from anywhere but `loc.v1`.
+
+    The key is deliberately still `v1`. It used to hold `{mode:'stop', code,
+    description, roadName, lat, lon}`, and `readOriginRecord` migrates that shape
+    in place on read; bumping the key would have sent every returning user of
+    that door back to the intro dialog, which is the exact failure the
+    grandfathering in `decideBoot` exists to prevent.
+  - `bus-board.recent.v1` — the last five addresses committed, most recent first,
+    no timestamps. Not configuration, and not an exception to the rule below:
+    there is nothing here to explain or to set. It is a cache of what the user
+    already did, the same bargain `loc.v1` makes, and it is the specific
+    mitigation for what the finder costs — a 5-digit stop code is printed on the
+    pole in front of you, a 6-digit postal code is not. Worth stating rather than
+    inheriting silently: it holds up to five labelled addresses, plausibly home
+    and work, in cleartext on the device. Never transmitted, never seen by the
+    server, cleared with the other three.
 - No new user-facing configuration. If a setting would need explaining, pick a
   sensible default instead. The first-visit entry choice is not an exception to
   this: a setting is something the user maintains and can be wrong about later,
@@ -113,7 +133,9 @@ convenience for capability, the default answer is no. Concretely:
   a one-line assignment. It is split that way because `app.js` cannot be imported
   by a test and `origin.js` can, which is the only unit coverage the journey
   rules have. Do not inline it back.
-- Upstream data: LTA DataMall (`BusStops`, `v3/BusArrival`)
+- Upstream data: LTA DataMall (`BusStops`, `v3/BusArrival`). The addresses the
+  finder searches are not upstream at all — they are a committed file in `data/`,
+  read once at startup, with no third party in the request path.
 
 ## Commands
 
@@ -125,13 +147,29 @@ npm run dev        # build + node --watch
 npm test           # build, then node --test over dist/**/*.test.js
 
 LTA_ACCOUNT_KEY=... npm start   # against the real DataMall API
+
+node tools/build-places.mjs     # rebuild data/sg-places.json.gz. By hand, roughly never
 ```
+
+`tools/build-places.mjs` is deliberately **not** a `package.json` script and
+never runs in CI: it pulls 57 MB from GitHub raw, which would put a third-party
+outage in the release path for a file that is committed and changes about never.
+Its output is byte-reproducible, so a regeneration diff is data change and
+nothing else. Read its header before running it — parsing the source document
+peaks around 600–800 MB of RSS.
 
 There is a test suite, and its scope is deliberately narrow: the
 concurrency-sensitive code in [src/cache.ts](src/cache.ts) and the state
 machines in [src/limiter.ts](src/limiter.ts) — `Backoff` and `CircuitBreaker` —
 whose failure mode is silent — a broken cache does not error, it just hammers
-upstream — so `curl` cannot verify them. Tests live beside the source as `src/*.test.ts`, compile
+upstream — so `curl` cannot verify them. [src/places.ts](src/places.ts) is in
+scope for the same reason and it is the newest one: a scoring ladder fails by
+ranking the wrong row first, which is a perfectly healthy 200 and so is invisible
+to `curl`. Its tests build their fixture in memory — a dozen hand-written
+records, gzipped, through `loadBuffer` — and never open the 11 MB artefact, which
+would cost ~200 ms and ~35 MB per test file and would fail for reasons belonging
+to the data rather than the code. Tests live beside the source as
+`src/*.test.ts`, compile
 with everything else, and use an injected clock; do not write a test that
 sleeps. [src/origin.test.ts](src/origin.test.ts) is the exception to "tests
 cover `src/`": it reaches into `public/origin.js` with a *computed* specifier,
@@ -165,13 +203,17 @@ timestamps at `GET /_stats`. Failure modes apply to `BusArrival` only —
 
 ## Verifying a change
 
-`npm test` covers the two modules above, and CI runs it on every push to `main`
+`npm test` covers the modules named above, and CI runs it on every push to `main`
 before the image build. Everything else, verify by running it:
 
 1. `npm run build` — must pass clean. `strict` and `noUncheckedIndexedAccess`
    are on; do not silence errors with `any` or `!`.
 2. `npm start`, then `curl -s localhost:8080/healthz` — expect
-   `{"ok":true,...,"mock":true}` once the stop list has loaded. The same payload
+   `{"ok":true,...,"mock":true}` once **both** lists have loaded: readiness is
+   `stops.size > 0 && places.size > 0`, and the address file also logs
+   `loaded 121360 places (generated 2026-08-11) in 178 ms` on the way in. A zero
+   `places` count with a `place index load failed:` line above it means the
+   artefact is missing or corrupt, and the pod will never become ready. The same payload
    carries `upstreamCalls` (cumulative since boot), `upstreamCallsPerMin`
    (trailing 60 s) and `breakerOpen`. All three come from `upstreamStats()` in
    [src/lta.ts](src/lta.ts) and are the only visibility into account spend, so
@@ -179,42 +221,79 @@ before the image build. Everything else, verify by running it:
    stay `0` forever: mock mode never enters `request()`, which is where they
    are incremented.
 3. Exercise the endpoint you touched, e.g.
-   `curl -s 'localhost:8080/api/board?lat=1.3521&lon=103.8198&limit=3'`.
+   `curl -s 'localhost:8080/api/board?lat=1.3521&lon=103.8198&limit=3'`. For the
+   finder, all four branches of one route:
+
+   ```sh
+   curl -s 'localhost:8080/api/places?q=310155'    # one address row, code null
+   curl -s 'localhost:8080/api/places?q=43179'     # one stop row, postal null
+   curl -s 'localhost:8080/api/places?q=toa+payoh' # ≤10 address rows, best first
+   curl -si 'localhost:8080/api/places?q=t'        # 400 — the client never sends this one
+   curl -si 'localhost:8080/api/places?q=310155' | grep -i cache  # private, max-age=300
+   ```
+
+   The rows are the part `curl` cannot judge. A ladder change is verified by
+   typing real addresses into the box and reading the order, not by a 200.
 4. For frontend changes, open `http://localhost:8080` and check the board in a
    phone-width viewport first (device toolbar, ~375 px) — that is the shipping
    target, so a change checked only at desktop width is unverified. Confirm the
    first screenful still leads with arrivals, nothing scrolls sideways, and every
    control is a comfortable one-handed tap. Geolocation needs a secure context — `localhost` counts, a
    bare LAN IP does not. The first visit is a different journey from every later
-   one, so clear the three keys (DevTools → Application → Local Storage) to get
+   one, so clear all four keys (DevTools → Application → Local Storage) to get
    the intro dialog back, and exercise both doors — a returning visitor never
-   sees it.
+   sees it. Clearing only `origin.v1` leaves a Recent list behind, which is a
+   fifth journey rather than a first one.
 
 Mock mode (no `LTA_ACCOUNT_KEY`) serves 12 synthetic stops with synthetic
-timings — enough to fill the 8-stop board, but search has almost nothing to
-match. That is expected, not a bug.
+timings — enough to fill the 8-stop board. The finder is **not** in mock mode
+with it: the address file is committed data, not LTA's, so `places.load()` runs
+unconditionally and the search returns all 121,360 real addresses over those 12
+stops. A Jurong postal code therefore resolves perfectly and then ranks demo
+stops 15 km away. That is expected, not a bug — but it makes mock mode a poor
+fixture for judging distance copy, and the stub (250 stops on a ~111 m grid) the
+better one.
 
 ## Architecture
 
 ```
 public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
  └─ origin.js    GET /api/arrivals?stops=…                │
-                 GET /api/stops?q=…                       │
-                                            ┌─────────────┴─────────────┐
-                                       StopIndex                   arrivalsForMany
-                                    (stops.ts, in RAM)          (arrivals.ts + cache.ts)
-                                            └────────── lta.ts ─────────┘
-                                                          │
-                                                    DataMall / mock.ts
+                 GET /api/places?q=…                      │
+                        ┌─────────────────────────────────┼───────────────────────┐
+                   PlaceIndex                         StopIndex           arrivalsForMany
+             (places.ts, from data/)             (stops.ts, in RAM)   (arrivals.ts + cache.ts)
+                                                          └──────── lta.ts ───────┘
+                                                                      │
+                                                             DataMall / mock.ts
 ```
+
+One route, three answers: `/api/places` decides what a query means rather than
+making the client guess. Six digits are a postal code (`PlaceIndex.get`), five
+are a stop code (`StopIndex.get`, the escape hatch), anything else is an address
+search (`PlaceIndex.search`, ≤10 rows). `GET /api/stops` is **gone** — it 404s,
+which is deliberate: `public/` is served with `maxAge: '1h'`, so a stale `app.js`
+runs for up to an hour after a deploy, and a 404 makes its existing `catch` say
+"Search is unavailable right now." over a working board, where a 200 with a
+different body shape would render `undefined` rows.
 
 - [public/app.js](public/app.js) — glue only: elements, `fetch`, `localStorage`,
   event wiring. Every rule it applies is decided in
   [public/origin.js](public/origin.js), which is pure and unit tested
 - [src/index.ts](src/index.ts) — Express routes, input validation, static files
 - [src/stops.ts](src/stops.ts) — the whole stop list in memory; linear-scan
-  search and nearest-neighbour, refreshed daily. A few thousand rows, so no
-  index and no database. Keep it that way.
+  nearest-neighbour, refreshed daily. A few thousand rows, so no index and no
+  database. Keep it that way. It has **no `search()` any more** — the finder
+  searches addresses, and all that is left here for a 5-digit code is `get()`,
+  an exact `Map` lookup. Adding a scan back would put a second, worse finder
+  beside the indexed one.
+- [src/places.ts](src/places.ts) — 121,360 addresses read from
+  `data/sg-places.json.gz` into an inverted index over building and road names.
+  Loaded synchronously *after* `listen()`, ~180 ms, ~38 MB retained. No refresh
+  timer and no `stop()`, unlike `StopIndex`: the file is baked into the image
+  behind a `readOnlyRootFilesystem` and cannot change under a running pod. The
+  scoring ladder, the block-number bonus and `MAX_CANDIDATES` are judgement calls
+  tuned against no user data — the tests pin the behaviour, not its rightness.
 - [src/arrivals.ts](src/arrivals.ts) — per-stop arrivals, 5 at a time, one
   failed stop maps to `null` rather than failing the board. `null` is failure
   only: a stop with nothing running — DataMall returns no body at all outside
@@ -246,13 +325,31 @@ public/app.js  ──GET /api/board?lat&lon&pinned──▶  index.ts
 - [src/mock.ts](src/mock.ts) — synthetic stops and timings for mock mode
 - [src/config.ts](src/config.ts) — all env reading happens here, nowhere else
 
+Two directories are not code and are easy to miss:
+
+- `data/` — `sg-places.json.gz`, the address artefact, ~1.6 MB, **committed on
+  purpose** and generated by hand with `node tools/build-places.mjs`. It reaches
+  the image through `COPY data ./data` in the Dockerfile and is resolved from
+  `import.meta.dirname`, the same relative trick `express.static` uses for
+  `public/`. It must stay out of `public/` — `express.static` would otherwise
+  hand 1.6 MB to anyone who guessed the path.
+- `docs/` — the two design records, each left as approved with a dated divergence
+  section appended: [docs/first-run-journey.md](docs/first-run-journey.md) (the
+  two-door first visit) and [docs/postal-code-finder.md](docs/postal-code-finder.md)
+  (the address finder; the code comments cite its D1–D8 sections by name). Read a
+  record's divergence section before trusting its body. The rule from
+  `docs/datamall-activation.md` still holds: a line contradicted by a change is
+  edited in the same commit.
+
 ## Conventions
 
 - Relative imports carry the `.js` extension (`./stops.js`), as NodeNext ESM
   requires, even though the source is `.ts`.
 - Shared shapes live in [src/types.ts](src/types.ts). DataMall's raw shapes
   (`RawStop`, `RawService`) stay private to `lta.ts` — map at the boundary and
-  never leak upstream field names past it.
+  never leak upstream field names past it. Same rule one file over: the artefact's
+  on-disk shape `PlaceRecord` stays private to `places.ts`, and `Place` is what
+  leaves it.
 - Read `process.env` only in `config.ts`.
 - Comments explain why, not what, and are used sparingly on decisions that look
   arbitrary otherwise (cache TTLs, concurrency of 5, TCP liveness probe). Match
@@ -268,6 +365,12 @@ These are constraints, not preferences:
 - `/api/board` carries a coordinate. It is `no-store` and must never be logged,
   cached or forwarded. Do not add request logging that includes query strings
   or client IPs.
+- `/api/places` carries whatever the user typed, routinely their own home postal
+  code. It is `private, max-age=300` — never `public`, which would invite Traefik
+  or a CDN to store a URL containing a stranger's address — and the query is
+  never logged, on the route or anywhere inside `PlaceIndex`. `private` keeps the
+  per-keystroke caching in the user's own browser, which is the whole practical
+  benefit at this traffic level.
 - Never log or return a DataMall error body — it can echo the AccountKey back.
   `lta.ts` deliberately reports status codes only.
 - `LTA_ACCOUNT_KEY` belongs in a Kubernetes Secret. Never commit it, never
@@ -289,23 +392,73 @@ reachable: exposing rough traffic volume is accepted, anything per-IP or
 per-stop is not. Probing it costs nothing upstream — only `request()` in
 `lta.ts` increments, so readiness polling never inflates the numbers.
 
+The manifest also sets `NODE_OPTIONS=--max-old-space-size=384`. V8 sizes its old
+space from the host's RAM rather than the cgroup limit, so on a large node it
+plans for far more than the 512Mi limit and gets OOM-killed instead of
+collecting. That was harmless while the heap was tiny; the address index makes it
+~38 MB long-lived plus a transient spike at load. It is a runtime flag, not
+application config, so it does not breach the "read `process.env` only in
+`config.ts`" rule.
+
 The CI workflow the manifest comments reference,
 [.github/workflows/bus-arrival.yml](.github/workflows/bus-arrival.yml), is in
 this repository: on every push to `main` it runs `npm ci && npm test` and only
 builds and pushes `ghcr.io/kylenguyen/bus-arrival` (`:latest` plus the commit
 SHA) if that passes. A red suite therefore blocks the tag the cluster pulls.
-Nothing in the repository references a path `apps/bus-arrival`.
+Nothing in the repository references a path `apps/bus-arrival`. Note that the
+image build now needs `data/sg-places.json.gz` in the checkout: `COPY data
+./data` fails without it, and a `data/` left untracked locally is a green suite
+followed by a red build.
 
 ## Gotchas
 
-- A handful of real stops carry `0,0` coordinates. `nearby()` filters them out;
-  `search()` keeps them findable. Preserve that split. The frontend consequence:
-  such a stop is tappable in the search results but must never become the board's
-  origin — ranking from `0,0` puts the whole of Singapore ~1,300 km away and
-  falsely trips the delisted-stop note. `isUsableStopCoord` in
-  [public/origin.js](public/origin.js) is the single place that is enforced, on
-  both the stored record and the commit path; the tap is refused with the ordinary
-  "no such stop" wording rather than a sentence about coordinates.
+- A handful of real stops carry `0,0` coordinates, and a scraped address dump
+  contains worse. There is no split to preserve here any more: `StopIndex` has
+  only `nearby()`, which drops them, and `PlaceIndex` rejects an unusable
+  coordinate at **load** — against Singapore's bounding box, which subsumes the
+  `0,0` test and also catches a row whose latitude and longitude were written the
+  wrong way round. The consequence is the useful part: **no finder row can ever
+  be uncommittable**, so there is no "you may not tap that one" copy anywhere and
+  none should be invented. `isUsableCoord` in
+  [public/origin.js](public/origin.js) — renamed from `isUsableStopCoord` when the
+  origin stopped being a stop — still earns its keep, but as a guard on *stored*
+  state rather than on results: a hand-edited `origin.v1` or a stale Recent entry
+  would otherwise rank the board from the Gulf of Guinea, ~1,300 km from every
+  stop in Singapore. `placeFromRow`, `readOriginRecord` and `readRecents` all
+  funnel through it, which is what lets `finderState` drop an unrankable row
+  before it is rendered instead of refusing the tap afterwards.
+- **The address data is a ~2020 scrape and it shows.** New estates — Tengah,
+  Bidadari, most 2021+ BTO blocks — are missing or wrong, and regenerating
+  changes nothing until upstream updates, which it may never do. That is the
+  whole reason the 5-digit stop-code path survives: in a new estate the code on
+  the pole can be the only way into the app. Separately and more annoyingly,
+  roads are stored in full (`ANG MO KIO AVENUE 3`) while everyone, LTA's own stop
+  descriptions included, writes `Ave` — so `woodlands ave 5` returns **zero**
+  rows today. Fixing it means a synonym table (`AVE→AVENUE`, `RD`, `ST`, `LOR`,
+  `JLN`, `CTRL`) with OR-matching per token in candidate generation, not a tweak
+  to the ladder. See the open issues in
+  [docs/postal-code-finder.md](docs/postal-code-finder.md) before starting.
+- The address file loads **synchronously, after the port binds**, and `/healthz`
+  gates readiness on it (`stops.size > 0 && places.size > 0`), so the pod is 503
+  for the ~180 ms it takes. Gating is right *because the failure is deterministic
+  at image-build time*: a bad artefact fails identically on every pod, and with
+  `replicas: 1` a pod that never becomes ready blocks its own rollout while the
+  old one keeps serving. If that file ever moves to a mounted volume or a network
+  fetch, the gate must come off in the same change — the failure would then be
+  environmental and per-pod, and gating on it would take the whole board down for
+  what is only a finder outage. The comment above `/healthz` says so too.
+- **The finder commits by index, not by code**, because an address has no unique
+  key the client knows. What makes that safe is that `applyFinder()` writes
+  `searchRows` and the `#results` markup in the **same synchronous block** — an
+  index read off the DOM therefore always addresses the array that produced that
+  DOM. Split those two statements across an `await` and a fast typist commits the
+  wrong address. Rows carry `data-index`; the `data-code` attribute in board-card
+  markup is the pin path and is unrelated.
+- `titleCase` in `origin.js` mangles acronyms — `HDB HUB` renders as `Hdb Hub`,
+  `NTUC FAIRPRICE` as `Ntuc Fairprice`. Shipped knowingly: the alternatives are
+  an unbounded exception list or leaving the server's ALL CAPS on the card, which
+  reads as shouting. Do not add a one-off exception; either the list earns its
+  keep as a list or the case stays naive.
 - iOS Safari spends a click's transient activation on the first `await`, and
   `getCurrentPosition` called after that point never prompts — silently, and only
   on iPhone. That is why `getPosition()`'s call sits inside a synchronously
@@ -321,7 +474,7 @@ Nothing in the repository references a path `apps/bus-arrival`.
   skeletons, because a refusal or a failure is the end of a wait and cards still
   pulsing under it promise a board that is not coming; `busy()` therefore calls
   `gate()` first and `showSkeleton()` after, never the other way round. The hatch —
-  the "Enter a stop code" button that appears after 3 s — is armed only for waits on
+  the "Enter an address" button that appears after 3 s — is armed only for waits on
   a *position*: a wait on `/api/board` fails on its own and raises its own retry,
   whereas an unanswered permission prompt never calls back at all, so the only way
   out of that one has to arrive on a timer. `showSkeleton()` tests the board's
@@ -330,9 +483,10 @@ Nothing in the repository references a path `apps/bus-arrival`.
   keep the array.
 - Reading `localStorage` throws as well as writing it — Firefox with
   `dom.storage.enabled = false` throws on the access itself — so every read sits
-  inside a `try` (`readRaw`, `readPins`, `readLoc`) and every write goes through
-  `write()`. A session with storage blocked works and simply is not remembered,
-  which for a first-time visitor means the intro returns on every reload.
+  inside a `try` (`readRaw`, `readPins`, `readLoc`, `storedOriginMode`) and every
+  write goes through `write()`. A session with storage blocked works and simply
+  is not remembered, which for a first-time visitor means the intro returns on
+  every reload.
 - `Monitored: 0` means the timing is scheduled, not live-tracked. The UI marks
   it with `*`; do not present it as a live ETA.
 - Arrival TTL (15 s) sits below the 20 s update frequency the guide documents

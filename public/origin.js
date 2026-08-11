@@ -14,17 +14,18 @@
 // free of fake timers and sleeps (AGENTS.md).
 
 /**
- * Whether a stop's coordinate is one the board can rank from. A handful of real
- * stops carry `0,0`: `search()` keeps them findable while `nearby()` filters
- * them out, so a search result can be perfectly findable and still uncommittable
- * as an origin. `lat: 0` with a non-zero lon is a real place, so the guard tests
- * the pair, not either half.
+ * Whether a coordinate is one the board can rank from. A handful of real stops
+ * carry `0,0`: `search()` keeps them findable while `nearby()` filters them out,
+ * so a search result can be perfectly findable and still uncommittable as an
+ * origin. A scraped address dump carries the same trap, which is why the name no
+ * longer says "stop" — the guard is the same one either side. `lat: 0` with a
+ * non-zero lon is a real place, so it tests the pair, not either half.
  *
  * @param {unknown} lat
  * @param {unknown} lon
  * @returns {boolean}
  */
-export function isUsableStopCoord(lat, lon) {
+export function isUsableCoord(lat, lon) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
   return lat !== 0 || lon !== 0;
 }
@@ -77,27 +78,73 @@ const FOCUS_FIX_MAX_AGE_MS = 5 * 60_000;
  * absent state, which is what makes every half-finished first run degrade to a
  * first visit with no extra flags.
  *
+ * A **normalising** read, not a validating one. Two things follow from that:
+ *
+ * - Every field of a `place` record is re-derived through `normalisePlace`, so a
+ *   label written under an older `LABEL_MAX`, or hand-edited in DevTools, is
+ *   re-capped and re-collapsed here rather than trusted. The property the old
+ *   stop-code check bought — "safe to interpolate into the chip" — is now
+ *   "**never a label longer than `LABEL_MAX`, and never one containing a
+ *   newline**".
+ * - A legacy `{mode:'stop', code, description, roadName, lat, lon}` record is
+ *   **migrated in place** rather than rejected. The key is not versioned for it
+ *   (`bus-board.origin.v1` stays), because the legacy record already carries a
+ *   usable coordinate, which makes the migration lossless in the only dimension
+ *   the board cares about. Dropping it instead would send every returning
+ *   stop-mode user back to the intro dialog — the exact failure `decideBoot`'s
+ *   grandfathering exists to prevent.
+ *
  * The `0,0` rejection is load-bearing, not defensive noise: a handful of real
- * stops carry `0,0`, `search()` keeps them findable, and an origin there would
- * rank the whole of Singapore ~1,300 km away.
+ * stops carry `0,0`, a scraped address dump carries the same trap, and an origin
+ * there would rank the whole of Singapore ~1,300 km away.
  *
  * @param {string | null | undefined} raw
- * @returns {{mode: 'gps'} | {mode: 'stop', code: string, lat: number, lon: number} | null}
+ * @returns {{mode: 'gps'} | Place | null}
  */
 export function readOriginRecord(raw) {
   try {
     const record = JSON.parse(raw ?? 'null');
     if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
     if (record.mode === 'gps') return record;
-    if (record.mode !== 'stop') return null;
-    // A string, not just something that stringifies to five digits: the code is
-    // written to the chip and read back out of storage, so keep the type tight.
-    if (typeof record.code !== 'string' || !/^\d{5}$/.test(record.code)) return null;
-    if (!isUsableStopCoord(record.lat, record.lon)) return null;
-    return record;
+    if (record.mode === 'place') return normalisePlace(record);
+    if (record.mode === 'stop') return normalisePlace(migrateStopRecord(record));
+    return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The legacy stop record, read as the place it always was: a fixed coordinate
+ * with a name on it. `label` is the code because that is the short thing the
+ * user chose it by, and `name` is the description and road they saw in the
+ * search results.
+ *
+ * The 5-digit check survives the migration on purpose. It is no longer about
+ * what the chip may interpolate — `normalisePlace` handles that now — but about
+ * what `Stop {code}` may claim: a record whose code is four digits or a number
+ * was never a stop this app wrote, and inventing a label from it would put a
+ * plausible-looking lie in the masthead.
+ *
+ * @param {{code?: unknown, description?: unknown, roadName?: unknown,
+ *   lat?: unknown, lon?: unknown, at?: unknown}} record
+ * @returns {object | null}
+ */
+function migrateStopRecord(record) {
+  if (typeof record.code !== 'string' || !/^\d{5}$/.test(record.code)) return null;
+  const where = [collapseSpace(record.description), collapseSpace(record.roadName)]
+    .filter(Boolean)
+    .join(', ');
+  return {
+    mode: 'place',
+    postal: null,
+    code: record.code,
+    label: `Stop ${record.code}`,
+    name: where || `Stop ${record.code}`,
+    lat: record.lat,
+    lon: record.lon,
+    at: record.at,
+  };
 }
 
 /**
@@ -128,9 +175,14 @@ function parseLastFix(raw) {
  * and tell the caller to persist it (`persist: true`). Only a genuinely empty
  * profile gets the intro.
  *
+ * A legacy `{mode:'stop'}` record therefore lands on `'place'` with
+ * `persist: false`: `readOriginRecord` migrated it, so it is a usable record and
+ * wins outright — it is not grandfathering, and it must never be mistaken for
+ * it. Rewriting the migrated record back to storage is the caller's business.
+ *
  * @param {{originRaw?: string | null, locRaw?: string | null, pinCount?: number,
  *   now: number}} input
- * @returns {{journey: 'intro' | 'gps' | 'stop', origin: object | null, persist: boolean}}
+ * @returns {{journey: 'intro' | 'gps' | 'place', origin: object | null, persist: boolean}}
  */
 export function decideBoot({ originRaw, locRaw, pinCount, now }) {
   const origin = readOriginRecord(originRaw);
@@ -144,9 +196,9 @@ export function decideBoot({ originRaw, locRaw, pinCount, now }) {
 }
 
 /**
- * The single mapping from origin state to a board coordinate. Stop mode ignores
+ * The single mapping from origin state to a board coordinate. Place mode ignores
  * `lastLoc` entirely — that is the whole point of the mode, and it is why a
- * stop-mode user never needs geolocation to have succeeded even once.
+ * place-mode user never needs geolocation to have succeeded even once.
  *
  * @param {object | null} origin
  * @param {{lat: number, lon: number} | null} lastLoc
@@ -154,7 +206,7 @@ export function decideBoot({ originRaw, locRaw, pinCount, now }) {
  */
 export function originCoord(origin, lastLoc) {
   if (!origin) return null;
-  if (origin.mode === 'stop') return { lat: origin.lat, lon: origin.lon };
+  if (origin.mode === 'place') return { lat: origin.lat, lon: origin.lon };
   return lastLoc ?? null;
 }
 
@@ -189,9 +241,11 @@ export function boardParams({ origin, lastLoc, pins, limit }) {
  * Whether returning to the tab should re-locate. True only for gps mode with no
  * fix or a stale one.
  *
- * False for stop mode whatever the fix's age: a stop-mode user usually has no
+ * False for place mode whatever the fix's age: a place-mode user usually has no
  * fix at all, so testing `lastLoc` alone — as the listener used to — fires an
- * unprompted geolocation request on every single tab focus.
+ * unprompted geolocation request on every single tab focus. The `!== 'gps'`
+ * guard covers a place origin unchanged; a chosen address no more re-locates
+ * than a chosen stop did.
  *
  * @param {object | null} origin
  * @param {{at: number} | null} lastLoc
@@ -215,7 +269,9 @@ export function shouldRelocateOnFocus(origin, lastLoc, now) {
  * @returns {string}
  */
 export function taglineFor(origin) {
-  if (origin?.mode === 'stop') return `Stops near ${origin.code}, live from LTA`;
+  // The long name, not the label: the tagline has a line to itself, so this is
+  // one of the two places with room to say where the board actually is.
+  if (origin?.mode === 'place') return `Stops near ${origin.name}, live from LTA`;
   if (origin?.mode === 'gps') return 'Stops nearest you, live from LTA';
   // No door taken yet — behind the intro, and on the dismissal gate. "Stops
   // nearest you" over a page with no board describes something that is not on
@@ -226,91 +282,61 @@ export function taglineFor(origin) {
 }
 
 /**
- * What the gate says while the first board is on its way. Stop mode names the
- * code, because "near you" would be a lie about where the board is ranked from —
- * and in stop mode nothing has asked for the user's location at all.
+ * What the gate says while the first board is on its way. Place mode names the
+ * address, because "near you" would be a lie about where the board is ranked
+ * from — and in place mode nothing has asked for the user's location at all.
+ *
+ * The **short** label, not the name: this sentence sits centred over skeleton
+ * cards on a 360 px phone, where a full address wraps to three lines and pushes
+ * the placeholders off the first screenful.
  *
  * @param {object | null} origin
  * @returns {string}
  */
 export function gateMessageFor(origin) {
-  if (origin?.mode === 'stop') return `Finding stops near ${origin.code}…`;
+  if (origin?.mode === 'place') return `Finding stops near ${origin.label}…`;
   return 'Finding stops near you…';
 }
 
 /**
  * The gate when the board comes back empty. In gps mode that means nothing is
- * near the user; in stop mode it means nothing is near the stop they named, and
- * saying "near you" there would misdescribe a board they may be nowhere near.
+ * near the user; in place mode it means nothing is near the address they named,
+ * and saying "near you" there would misdescribe a board they may be nowhere
+ * near. Short label again, for the same reason as `gateMessageFor`.
  *
  * @param {object | null} origin
  * @returns {string}
  */
 export function noStopsMessage(origin) {
-  if (origin?.mode === 'stop') return `No bus stops found near ${origin.code}.`;
+  if (origin?.mode === 'place') return `No bus stops found near ${origin.label}.`;
   return 'No bus stops found near you.';
 }
 
 /**
- * Whether the board should carry the delisted-stop note.
+ * The distance cell on a card: metres and a walking time, except on the card the
+ * user is already standing at.
  *
- * "The origin code is absent from the board" is *not* sufficient, and this is the
- * subtle one. Pinned stops are pushed first and the board is truncated to 8
- * before the arrivals fan-out (src/index.ts), so a user holding 8 pins gets zero
- * nearby slots and the origin stop is missing for a reason that has nothing to do
- * with LTA delisting it. `nearby()` always sorts the origin stop first at
- * `distanceM: 0` (pinned by src/stops.test.ts), so if any non-pinned stop made it
- * onto the board and the origin did not, the stop list genuinely no longer has
- * it.
+ * `Here` is **gps-only**, and that asymmetry is the whole content of this
+ * function. `AT_STOP_M` is a statement about the noise in a phone's fix — below
+ * it, "0 m · 1 min walk" is a walking time invented from error bars. A geocoded
+ * building has no such noise, so a place origin at 0 m means the stop really is
+ * outside that door and the walk is a real, useful number.
  *
- * @param {object | null} origin
- * @param {Array<{code?: string, pinned?: boolean}>} stops
- * @returns {boolean}
- */
-export function shouldShowDelistedNote(origin, stops) {
-  if (origin?.mode !== 'stop') return false;
-  const board = Array.isArray(stops) ? stops : [];
-  if (board.some((stop) => stop?.code === origin.code)) return false;
-  return board.some((stop) => !stop?.pinned);
-}
-
-/**
- * The note itself. Empty for anything but a stop origin, so a caller that
- * forgets `shouldShowDelistedNote` renders nothing rather than "Stop undefined".
+ * Place mode used to refuse `formatDistance` outright, back when the origin was
+ * a stop code the user might have been nowhere near. A typed address is somewhere
+ * they are at or going to, so the walk is the most decision-relevant number on
+ * the card. The origin-stop marker went with that reasoning: it named nothing a
+ * place origin can be, and there is no longer a code to match a card against.
  *
- * @param {object | null} origin
- * @returns {string}
- */
-export function delistedNote(origin) {
-  if (origin?.mode !== 'stop') return '';
-  return `Stop ${origin.code} is no longer in service. Showing stops near it.`;
-}
-
-/**
- * The distance cell on a card, which means something different in each mode.
- *
- * In gps mode it is the walk from where the user is standing — except within
- * `AT_STOP_M`, where there is no walk to describe. In stop mode the board is
- * ranked from a stop that may be nowhere near them, so a walking time would be a
- * claim about their legs that nothing supports — metres from the named stop is the
- * honest reading. The origin's own card is matched **by code, not by distance**: a
- * co-located stop can also be `0 m` away and is still a different stop.
- *
- * Kept separate from `formatDistance` rather than added as a second parameter:
- * `(This stop)` is not a distance format, `renderShells` still has exactly one
- * call site, and `formatMetres`/`formatDistance` stay single-argument.
- *
- * @param {{code?: string, distanceM?: unknown} | null} stop
+ * @param {{distanceM?: unknown} | null} stop
  * @param {object | null} origin
  * @returns {string}
  */
 export function distanceLabel(stop, origin) {
   if (!origin) return '';
-  if (origin.mode === 'stop') {
-    if (stop?.code === origin.code) return '(This stop)';
-    return formatMetres(stop?.distanceM);
+  if (origin.mode === 'gps' && typeof stop?.distanceM === 'number' && stop.distanceM < AT_STOP_M) {
+    return 'Here';
   }
-  if (typeof stop?.distanceM === 'number' && stop.distanceM < AT_STOP_M) return 'Here';
   return formatDistance(stop?.distanceM);
 }
 
@@ -419,7 +445,7 @@ export function dismissGate(variant) {
     return {
       message: 'Nothing to show yet — choose how to start.',
       primary: { label: 'Use my current location', door: 'gps' },
-      secondary: { label: 'Enter a stop code', door: 'code' },
+      secondary: { label: ADDRESS_DOOR_LABEL, door: 'code' },
     };
   }
   // The sentence explaining why location is impossible here was in the dialog,
@@ -427,11 +453,24 @@ export function dismissGate(variant) {
   // a button that is not on screen; the door that does work is the whole answer,
   // and it moves into the primary slot rather than being left as a lone ghost.
   return {
-    message: 'Nothing to show yet — enter a stop code to see arrivals.',
-    primary: { label: 'Enter a stop code', door: 'code' },
+    message: 'Nothing to show yet — enter an address to see arrivals.',
+    primary: { label: ADDRESS_DOOR_LABEL, door: 'code' },
     secondary: null,
   };
 }
+
+/**
+ * The second door's label, wherever it is offered: this gate, the wait hatch and
+ * every refusal in `app.js`, and the intro dialog's static markup. Exported so
+ * the three JS sites cannot drift apart from each other — the fourth is in
+ * `index.html`, which nothing can import from, so it is written out there and
+ * kept in step by hand.
+ *
+ * It no longer says "stop code" because the door no longer leads to one. The
+ * postal code, the building and the road are all addresses; the 5-digit stop
+ * code that still works behind it is an escape hatch, not the headline.
+ */
+export const ADDRESS_DOOR_LABEL = 'Enter an address';
 
 // --- the chip and the finder --------------------------------------------
 
@@ -445,24 +484,30 @@ const CARET = '▾';
  * The visible label stays short and the long description goes in `ariaLabel`
  * only. That is a layout decision, not an oversight: the chip shares one flex row
  * with the `h1` inside roughly 333 px of usable width on a 360 px phone, and
- * `.ghost` is `white-space: nowrap`, so a label carrying "Blk 155, Lor 1 Toa
- * Payoh" would push the row wider than the viewport rather than wrapping. A
- * screen reader has no such budget, so it gets the whole sentence.
+ * `.ghost` is `white-space: nowrap`, so a label carrying "155 Lorong 1 Toa
+ * Payoh, Singapore 310155" would push the row wider than the viewport rather
+ * than wrapping. A screen reader has no such budget, so it gets the whole
+ * sentence.
  *
- * Only the code reaches the label, and `readOriginRecord` guarantees five digits,
- * so there is nothing in it to wrap, escape or truncate.
+ * The three defences on that budget are `label` capped at 18 in `placeFromRow`,
+ * re-capped on every read by `readOriginRecord`, and an `text-overflow: ellipsis`
+ * backstop on `#origin-chip` — so nothing that reaches here needs wrapping,
+ * escaping or truncating again.
  *
  * @param {object | null} origin
  * @returns {{label: string, ariaLabel: string}}
  */
 export function chipState(origin) {
-  if (origin?.mode === 'stop') {
-    const where = [origin.description, origin.roadName].filter(Boolean).join(', ');
+  if (origin?.mode === 'place') {
+    // The postal is the one thing a Singaporean can act on unambiguously, so it
+    // is spoken in full; it is omitted rather than left as "Singapore null" for
+    // a stop row or a road-only row, which have none.
+    const where = [origin.name, origin.postal && `Singapore ${origin.postal}`]
+      .filter(Boolean)
+      .join(', ');
     return {
-      label: `Stop ${origin.code} ${CARET}`,
-      ariaLabel: `Change stops shown. Currently: stops near ${origin.code}${
-        where ? ` — ${where}` : ''
-      }`,
+      label: `${origin.label} ${CARET}`,
+      ariaLabel: `Change stops shown. Currently: stops near ${where}`,
     };
   }
   if (origin?.mode === 'gps') {
@@ -478,50 +523,469 @@ export function chipState(origin) {
 }
 
 /** What to say when there is not enough typed to act on. */
-const COMMIT_HINT = 'Enter a 5-digit stop code, or at least two letters of a stop name.';
+const COMMIT_HINT = 'Enter a 6-digit postal code, or at least two letters.';
 
 /**
  * The whole decision for what pressing Enter in the finder does. `app.js` reads
  * `action` and nothing else.
  *
- * A five-digit query is an unambiguous instruction, so it commits without a tap —
- * but only against a result that is actually there and actually rankable. A name
- * query never commits: the top hit is a guess, and the list is right there to tap.
+ * **Commits by index, not by code.** An address has no client-known unique key —
+ * two rows can share a road, a block and even a coordinate — so the answer is a
+ * position in the row list. What makes that safe is an invariant on the caller:
+ * `searchRows` and the `#results` markup are written in the same synchronous
+ * block, so an index read off the DOM always addresses the array that produced
+ * it. `rows` here is that same array.
  *
- * The `0,0` case is why this cannot just test the digits. `search()` deliberately
- * keeps those stops findable while `nearby()` drops them, so "43179 matched" and
- * "43179 can be ranked from" are different questions. The refusal reuses the
- * "no such stop" sentence rather than inventing a second one for a distinction the
- * user has no way to see — the same wording, for the same reason, as the tap path
- * in `chooseStop()`.
+ * The order of the ladder is the whole content of this function:
  *
- * @param {unknown} value the raw input value
- * @param {Array<{code?: string, lat?: unknown, lon?: unknown}>} results
- * @returns {{action: 'choose', code: string} | {action: 'note', message: string} |
+ * 1. `offline` waits, and says nothing. This absorbs the untested early return
+ *    that used to guard this call in `app.js`: "empty because nothing matched"
+ *    and "empty because we never got to ask" are different answers, and only the
+ *    caller's status can tell them apart. Naming a postal code that was never
+ *    searched for would blame the address for the network.
+ * 2. A highlighted row outranks everything, digits included: a user who typed
+ *    six digits *and* arrowed down to a row means the row.
+ * 3. Six digits, with or without the `S` a Singaporean naturally types.
+ * 4. Five digits — the stop-code escape hatch.
+ * 5. Too little typed.
+ * 6. Rows on screen and nothing to disambiguate them: wait. Committing the top
+ *    row would guess between places the user can see and has not chosen.
+ * 7. Nothing matched, in `finderState`'s exact words.
+ *
+ * A row that reaches here is already rankable — `finderState` drops the rest
+ * before they are rendered — so this no longer re-checks coordinates the way the
+ * stop-code version had to.
+ *
+ * @param {{value?: unknown, rows?: Array<{place?: Place | null}> | null,
+ *   status?: 'idle' | 'searching' | 'ok' | 'offline', activeIndex?: unknown}} input
+ * @returns {{action: 'choose', index: number} | {action: 'note', message: string} |
  *   {action: 'wait'}}
  */
-export function commitDecision(value, results) {
+export function commitDecision({ value, rows, status, activeIndex }) {
   // Trimmed, because a trailing space off a phone keyboard's autocomplete is not
-  // the user changing their mind about which stop they meant.
+  // the user changing their mind about which address they meant.
   const query = String(value ?? '').trim();
-  const list = Array.isArray(results) ? results : [];
+  // Deliberately *not* filtered: the returned index addresses the caller's own
+  // array, so compacting it here would answer with a position that means
+  // something different at the other end.
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (status === 'offline') return { action: 'wait' };
+
+  const active = Number.isFinite(activeIndex) ? Math.trunc(activeIndex) : -1;
+  if (active >= 0 && active < list.length && list[active]?.place) {
+    return { action: 'choose', index: active };
+  }
+
+  const postal = /^s?\s*(\d{6})$/i.exec(query)?.[1];
+  if (postal) {
+    const at = list.findIndex((row) => row?.place?.postal === postal);
+    if (at >= 0) return { action: 'choose', index: at };
+    return { action: 'note', message: `No address at ${postal}.` };
+  }
 
   if (/^\d{5}$/.test(query)) {
-    const match = list.find((stop) => stop?.code === query);
-    if (match && isUsableStopCoord(match.lat, match.lon)) return { action: 'choose', code: query };
+    const at = list.findIndex((row) => row?.place?.code === query);
+    if (at >= 0) return { action: 'choose', index: at };
     return { action: 'note', message: `No stop with code ${query}.` };
   }
 
-  // Below two characters `runSearch` asks for nothing (`/api/stops` answers 400),
-  // so there is no list to have matched against and nothing to report but how much
-  // is needed.
+  // Below two characters `runSearch` asks for nothing (`/api/places` answers
+  // 400), so there is no list to have matched against and nothing to report but
+  // how much is needed.
   if (query.length < 2) return { action: 'note', message: COMMIT_HINT };
 
-  // A name with hits: leave it. Committing the first row would silently pick one
-  // of several stops the user can see and has not chosen between.
-  if (list.length > 0) return { action: 'wait' };
+  if (list.some((row) => row?.place)) return { action: 'wait' };
 
-  // Same sentence `runSearch` already wrote under the box; Enter should not
+  // Same sentence `finderState` already wrote under the box; Enter should not
   // rephrase a fact the user is already looking at.
-  return { action: 'note', message: 'No stops matched.' };
+  return { action: 'note', message: NO_MATCH_NOTE };
+}
+
+// --- places -------------------------------------------------------------
+//
+// Everything below is the pure half of the postal-code finder
+// (docs/postal-code-finder.md, D5 and D6). `Place` is *the* origin record —
+// `readOriginRecord` above returns one, and migrates the legacy stop record into
+// one — and `finderState` decides the whole panel, which `app.js` applies in a
+// single run of assignments.
+
+/**
+ * What the board is ranked from, once an address has been chosen.
+ *
+ * Two names, not one, and the split is the whole point: `label` is for anywhere
+ * something shares a line or a glance (the chip, the gate), `name` is for
+ * anywhere there is a line to spare (the tagline, an aria-label). Compose
+ * `name` + `postal` at the render site rather than storing a third string.
+ *
+ * `postal` is a **string or null**, never a number — `Number('018956')` loses the
+ * leading zero, and the leading zero is most of Singapore's city centre.
+ *
+ * @typedef {{mode: 'place', postal: string | null, code: string | null,
+ *   label: string, name: string, lat: number, lon: number, at?: number}} Place
+ */
+
+/**
+ * The chip's budget, and the reason `label` exists at all. At 360 px the masthead
+ * row has ~333 px, the `h1` takes ~110 px and the chip's own padding ~31 px,
+ * which leaves roughly 24 characters for label plus caret. 18 keeps a margin for
+ * a wider font and for the caret itself.
+ */
+const LABEL_MAX = 18;
+
+/** The tagline and the aria-label each have a line to themselves, so: more. */
+const NAME_MAX = 40;
+
+/** How many addresses the Recent list keeps. Five fits above the fold at 375 px. */
+const RECENT_MAX = 5;
+
+/**
+ * Whitespace runs collapsed to one space and trimmed; `''` for anything that is
+ * not a string. The address data is a scrape, so a stray newline or tab inside a
+ * building name is a real possibility, and the chip is one `white-space: nowrap`
+ * flex row that a newline would silently break.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function collapseSpace(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
+/**
+ * Truncated with an ellipsis, counting the ellipsis *inside* the budget — a cap
+ * that overflows by one character is not a cap, and the layout sums that were
+ * used to pick `LABEL_MAX` assumed the returned length.
+ *
+ * @param {string} text
+ * @param {number} max
+ * @returns {string}
+ */
+function cap(text, max) {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/**
+ * ALL CAPS from the dump into something a card can show.
+ *
+ * The casing conversion lives here, pure and tested, which is exactly why the
+ * server ships uppercase: normalising 121k records on disk would cost megabytes
+ * to save a client-side `replace`.
+ *
+ * A letter is capitalised when it starts the string or follows something that is
+ * neither a letter nor an apostrophe. The apostrophe exception is what keeps
+ * `ST. GEORGE'S ROAD` from becoming `St. George'S Road`, which a plain `\b` test
+ * produces.
+ *
+ * **Known weakness:** acronyms come out wrong — `NTUC FAIRPRICE` becomes
+ * `Ntuc Fairprice`. The alternatives are an unbounded exception list or shipping
+ * the shouting, so this ships as-is and gets looked at on a real phone before
+ * anyone spends a list on it.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function titleCase(value) {
+  const text = collapseSpace(value).toLowerCase();
+  return text.replace(
+    /(^|[^a-z'])([a-z])/g,
+    (_match, before, letter) => before + letter.toUpperCase(),
+  );
+}
+
+/**
+ * The **single** mapping from a server row to an origin record. Every commit path
+ * goes through it, so the label rules cannot drift between the tap path, the
+ * Enter path and the Recent list.
+ *
+ * `null` for a row the board could not be ranked from — no usable coordinate — and
+ * for a row with nothing to call it, because a chip reading `▾` on its own is
+ * worse than a row that was never offered. Filtering here rather than refusing on
+ * tap is what lets `finderState` drop the row before it is rendered.
+ *
+ * `postal` and `code` are mutually exclusive and either may be null: a row is
+ * either an address or the 5-digit stop-code escape hatch. Both are type-checked
+ * rather than trusted, and a malformed one is nulled rather than taken as a reason
+ * to drop an otherwise usable row.
+ *
+ * @param {{postal?: unknown, code?: unknown, building?: unknown, block?: unknown,
+ *   road?: unknown, lat?: unknown, lon?: unknown} | null | undefined} row
+ * @returns {Place | null}
+ */
+export function placeFromRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  if (!isUsableCoord(row.lat, row.lon)) return null;
+
+  const building = titleCase(row.building);
+  const block = collapseSpace(row.block);
+  const road = titleCase(row.road);
+  const postal = typeof row.postal === 'string' && /^\d{6}$/.test(row.postal) ? row.postal : null;
+  const code = typeof row.code === 'string' && /^\d{5}$/.test(row.code) ? row.code : null;
+
+  // Shortest first: a building name is what someone would say out loud, and the
+  // postal code is the last resort because it is the thing they had to look up.
+  const label =
+    building ||
+    (block && `Blk ${block}`) ||
+    road ||
+    (code && `Stop ${code}`) ||
+    (postal && `S${postal}`) ||
+    '';
+  if (!label) return null;
+
+  const street = [block, road].filter(Boolean).join(' ');
+  const name = [building, street].filter(Boolean).join(', ');
+
+  return {
+    mode: 'place',
+    postal,
+    code,
+    // A stop row and a bare postal row have no street to describe, so `name`
+    // falls back to the label rather than to an empty tagline.
+    label: cap(label, LABEL_MAX),
+    name: cap(name || label, NAME_MAX),
+    lat: row.lat,
+    lon: row.lon,
+  };
+}
+
+/**
+ * A stored `Place` read back, or null. Every field is re-derived rather than
+ * trusted: the record is JSON a user could hand-edit in DevTools, and it may also
+ * predate a change to `LABEL_MAX`, so the caps are re-applied on every read
+ * instead of only on write.
+ *
+ * The single exit for both stored shapes — `readOriginRecord` sends `place`
+ * records and migrated `stop` records through it, and `readRecents` sends every
+ * entry of the Recent list — which is what makes "a label is never longer than
+ * `LABEL_MAX` and never contains a newline" a property of the whole module
+ * rather than of one code path.
+ *
+ * @param {unknown} record
+ * @returns {Place | null}
+ */
+function normalisePlace(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  if (record.mode !== 'place') return null;
+  if (!isUsableCoord(record.lat, record.lon)) return null;
+
+  const label = collapseSpace(record.label);
+  if (!label) return null;
+  const name = collapseSpace(record.name);
+
+  /** @type {Place} */
+  const place = {
+    mode: 'place',
+    postal: typeof record.postal === 'string' && /^\d{6}$/.test(record.postal) ? record.postal : null,
+    code: typeof record.code === 'string' && /^\d{5}$/.test(record.code) ? record.code : null,
+    label: cap(label, LABEL_MAX),
+    name: cap(name || label, NAME_MAX),
+    lat: record.lat,
+    lon: record.lon,
+  };
+  if (Number.isFinite(record.at)) place.at = record.at;
+  return place;
+}
+
+/**
+ * The Recent list as held in storage. Corrupt state reads as an empty list, the
+ * same bargain `readOriginRecord` and `readLoc` already make — a broken key must
+ * cost a convenience, never the app.
+ *
+ * A single unrankable entry drops itself rather than the whole list: the other
+ * four addresses are still one tap away, and there is nothing the user could do
+ * about the bad one anyway.
+ *
+ * @param {string | null | undefined} raw
+ * @returns {Place[]}
+ */
+export function readRecents(raw) {
+  try {
+    const parsed = JSON.parse(raw ?? 'null');
+    if (!Array.isArray(parsed)) return [];
+    const places = [];
+    for (const entry of parsed) {
+      const place = normalisePlace(entry);
+      if (place) places.push(place);
+    }
+    return places.slice(0, RECENT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The Recent list with `place` moved to the front.
+ *
+ * Always a new array — the caller holds the old one in a module variable and
+ * writes the returned one to storage, so mutating in place would leave the two
+ * indistinguishable and make a failed write invisible.
+ *
+ * No clock and no `at`: order *is* the recency, so a timestamp would be a second
+ * copy of the same fact and would drag `Date.now` into a module that must not
+ * read it.
+ *
+ * @param {Place[] | null | undefined} list
+ * @param {Place | null | undefined} place
+ * @returns {Place[]}
+ */
+export function rememberRecent(list, place) {
+  const current = (Array.isArray(list) ? list : []).filter(Boolean);
+  if (!place) return current.slice(0, RECENT_MAX);
+
+  const key = recentKey(place);
+  const rest = current.filter((entry) => recentKey(entry) !== key);
+  return [place, ...rest].slice(0, RECENT_MAX);
+}
+
+/**
+ * What counts as the same address. Postal when there is one — two rows sharing a
+ * postal code are the same building — and the coordinate otherwise, which is the
+ * only identity a stop row or a road-only row has. Prefixed so a postal can never
+ * collide with a coordinate string.
+ *
+ * @param {Place} place
+ * @returns {string}
+ */
+function recentKey(place) {
+  return place.postal ? `p:${place.postal}` : `c:${place.lat},${place.lon}`;
+}
+
+// --- the finder panel ---------------------------------------------------
+
+/**
+ * How long the box waits after a keystroke before asking the server. A
+ * *duration* is not a clock read — nothing here observes the time, it only says
+ * how much of it to wait — so this sits with the rules it belongs to rather than
+ * in the glue.
+ */
+export const SEARCH_DEBOUNCE_MS = 250;
+
+/** The heading over the Recent rows. Sits outside the listbox: a heading is not an option. */
+const RECENT_HEADING = 'Recent';
+
+/** What the panel says when there is one character in the box. */
+const SHORT_NOTE = 'Keep typing — 2 letters, or a 6-digit postal code.';
+
+/**
+ * The no-match sentence. A constant because `commitDecision` must return the
+ * exact same bytes: pressing Enter should never rephrase a fact the user is
+ * already reading under the box.
+ */
+const NO_MATCH_NOTE = 'No address matched.';
+
+/** Shown when the search request itself failed — the board and the pins are fine. */
+const OFFLINE_NOTE = 'Search is unavailable right now.';
+
+/**
+ * Where the arrow keys move the highlight.
+ *
+ * `-1` is "nothing highlighted", which is a doorway rather than a ring position:
+ * down from it lands on the first row, up from it on the last. Within the list it
+ * wraps both ends, because a list this short has no bottom worth stopping at.
+ *
+ * An out-of-range start is treated as `-1` rather than clamped to the nearest
+ * row: a stale index left over from a longer list means the user's highlight is
+ * already gone, and moving to whatever now sits at that position would commit
+ * them to a row they never looked at.
+ *
+ * @param {unknown} index
+ * @param {unknown} delta
+ * @param {unknown} count
+ * @returns {number}
+ */
+export function moveActive(index, delta, count) {
+  const total = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+  if (total === 0) return -1;
+
+  const step = Number.isFinite(delta) ? Math.trunc(delta) : 0;
+  const start = Number.isFinite(index) ? Math.trunc(index) : -1;
+  if (start < 0 || start >= total) return step < 0 ? total - 1 : 0;
+
+  return (((start + step) % total) + total) % total;
+}
+
+/**
+ * The whole finder panel, decided in one place: six states, and every attribute
+ * the apply site sets, so `app.js` is a run of one-line assignments with no
+ * branch left in it.
+ *
+ * Rows arrive already converted — each carries a ready `Place` — so committing is
+ * `choosePlace(rows[i].place)` with no second lookup and no branch on where the
+ * row came from. Anything without a rankable `Place` is dropped here rather than
+ * refused on tap: a row that cannot become an origin should never have been on
+ * screen.
+ *
+ * Two behaviours worth naming. During `searching` the previous rows stay put, so
+ * the list does not empty and refill on every keystroke. And `offline` shows
+ * Recent: with the network down, the addresses used most are still one tap away
+ * and cost no request at all.
+ *
+ * `query` comes back normalised, including the `S310155` → `310155` strip, so the
+ * caller sends the digits the server can resolve rather than the prefix a
+ * Singaporean naturally types.
+ *
+ * @param {{value?: unknown, results?: Array<{place?: Place | null}> | null,
+ *   status?: 'idle' | 'searching' | 'ok' | 'offline', recents?: Place[] | null}} input
+ * @returns {{state: 'idle' | 'short' | 'searching' | 'results' | 'empty' | 'offline',
+ *   query: string, shouldSearch: boolean, rows: Array<{place: Place}>,
+ *   heading: string, note: string, busy: boolean, expanded: boolean,
+ *   showClear: boolean}}
+ */
+export function finderState({ value, results, status, recents }) {
+  const typed = collapseSpace(value);
+  // The strip happens here rather than at commit time, or the server never sees
+  // the digits at all — it is the request that has to carry them.
+  const postalMatch = /^s\s*(\d{6})$/i.exec(typed);
+  const query = postalMatch ? postalMatch[1] : typed;
+
+  const recentRows = (Array.isArray(recents) ? recents : [])
+    .filter((place) => place && isUsableCoord(place.lat, place.lon))
+    .map((place) => ({ place }));
+  const resultRows = (Array.isArray(results) ? results : []).filter(
+    (row) => row?.place && isUsableCoord(row.place.lat, row.place.lon),
+  );
+
+  const base = { query, shouldSearch: query.length >= 2, showClear: typed.length > 0 };
+
+  if (query.length === 0) return panel(base, 'idle', recentRows, RECENT_HEADING, '');
+  if (query.length < 2) return panel(base, 'short', recentRows, RECENT_HEADING, SHORT_NOTE);
+
+  if (status === 'offline') {
+    return panel(base, 'offline', recentRows, RECENT_HEADING, OFFLINE_NOTE);
+  }
+  if (status === 'ok') {
+    return resultRows.length > 0
+      ? panel(base, 'results', resultRows, '', '')
+      : panel(base, 'empty', [], '', NO_MATCH_NOTE);
+  }
+  // Anything else — `idle` between the keystroke and the debounce firing, or
+  // `searching` once the request is out — is a wait, and a wait keeps what is
+  // already on screen.
+  return panel(base, 'searching', resultRows, '', '', true);
+}
+
+/**
+ * The return shape assembled once, so no state can forget a field and hand
+ * `app.js` an `undefined` to assign to an ARIA attribute.
+ *
+ * @param {{query: string, shouldSearch: boolean, showClear: boolean}} base
+ * @param {string} state
+ * @param {Array<{place: Place}>} rows
+ * @param {string} heading
+ * @param {string} note
+ * @param {boolean} [busy]
+ */
+function panel(base, state, rows, heading, note, busy) {
+  return {
+    ...base,
+    state,
+    rows,
+    // An empty list gets no heading: "Recent" over nothing describes a list that
+    // is not there.
+    heading: rows.length > 0 ? heading : '',
+    note,
+    busy: busy === true,
+    expanded: rows.length > 0,
+  };
 }

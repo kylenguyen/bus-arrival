@@ -2,17 +2,23 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 /**
- * Six invariants of `StopIndex` that the client's first-run journey depends on.
- * Each one is load-bearing for a rule in `public/origin.js`; if a case here
- * goes red, the client rule it names is silently wrong, not merely untested.
+ * Three invariants of `StopIndex` that the board's ranking depends on. Each one
+ * is load-bearing for a rule in `public/origin.js`; if a case here goes red, the
+ * client rule it names is silently wrong, not merely untested.
+ *
+ * There used to be six. The other three were about `search()`, which this class
+ * no longer has: the finder searches addresses through `PlaceIndex`, and the
+ * only thing left here for a 5-digit stop code is `get()`, an exact `Map`
+ * lookup with nothing to rank.
  *
  * `config` reads the environment once, at import time, and `request()` refuses
  * to call out without an AccountKey, so both have to be in place before
  * `stops.js` is evaluated — hence the dynamic import rather than a static one,
  * the same pattern as `lta.stops.test.ts`. Mock mode would need no stub at all,
- * but `MOCK_STOPS` holds no 0,0 record and two of these six cases are about
- * exactly that record. Each test file is its own process under `node --test`,
- * so the env mutation leaks nowhere.
+ * but `MOCK_STOPS` holds no 0,0 record and one of these three cases is about
+ * exactly that record — `nearby()` must drop it, wherever the caller is
+ * standing. Each test file is its own process under `node --test`, so the env
+ * mutation leaks nowhere.
  */
 process.env.LTA_ACCOUNT_KEY = 'test-key';
 process.env.LTA_BASE_URL = 'http://datamall.test/ltaodataservice';
@@ -26,11 +32,9 @@ const ZERO_COORD_CODE = '46999';
 /**
  * Raw `BusStops` records, in feed order. `toStop` drops a record only when the
  * code is missing or a coordinate is non-finite, so the 0,0 row survives into
- * the index — which is what makes the nearby/search split observable here.
- *
- * 431791 leads and 43179 trails deliberately: feed order is the ranking a
- * scoreless implementation would produce, so the exact-match case cannot pass
- * by accident of insertion order.
+ * the index — which is what makes `nearby()`'s filter observable here at all.
+ * `get('46999')` still returns it, and the client's `isUsableCoord` is what
+ * refuses it as an origin.
  */
 const FEED = [
   {
@@ -97,8 +101,8 @@ if (index.size !== FEED.length) {
 
 describe('StopIndex.nearby', () => {
   it('puts the stop you are standing at first, at zero metres', () => {
-    // `distanceLabel`'s `(This stop)` and `shouldShowDelistedNote` both read the
-    // origin stop off the head of this list and expect distanceM to be 0 there.
+    // The card the board is ranked from sits at the head of this list, and
+    // `distanceLabel` renders its `distanceM` of 0 as "Here" for a gps origin.
     const stops = index.nearby(ORIGIN.lat, ORIGIN.lon);
     assert.equal(stops[0]?.code, '01012');
     assert.equal(stops[0]?.distanceM, 0);
@@ -110,40 +114,6 @@ describe('StopIndex.nearby', () => {
     const stops = index.nearby(ORIGIN.lat, ORIGIN.lon);
     assert.equal(stops.length, FEED.length - 1);
     assert.ok(!stops.some((stop) => stop.code === ZERO_COORD_CODE));
-  });
-});
-
-describe('StopIndex.search', () => {
-  it('keeps a 0,0 stop findable by name', () => {
-    // The other half of the AGENTS.md split, and the reason the client carries
-    // its own `isUsableStopCoord` guard: a search result may be uncommittable.
-    const results = index.search('zeroland');
-    assert.deepEqual(
-      results.map((stop) => stop.code),
-      [ZERO_COORD_CODE],
-    );
-    const stop = results[0];
-    assert.ok(stop);
-    assert.equal(stop.lat, 0);
-    assert.equal(stop.lon, 0);
-  });
-
-  it('ranks an exact code match above a code that merely starts with the query', () => {
-    // `commitDecision` commits on Enter by finding `code === query` in the
-    // results; ranking the exact match first is what keeps it inside `limit`.
-    const results = index.search('43179');
-    assert.equal(results[0]?.code, '43179');
-    assert.ok(
-      results.some((stop) => stop.code === '431791'),
-      'the prefix match is present, just ranked below',
-    );
-  });
-
-  it('returns nothing below two characters', () => {
-    // The guard that lets the client query on every keystroke without `/api/stops`
-    // answering 400.
-    assert.deepEqual(index.search('4'), []);
-    assert.deepEqual(index.search(''), []);
   });
 });
 

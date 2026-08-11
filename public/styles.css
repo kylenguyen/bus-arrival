@@ -102,6 +102,20 @@ main {
   gap: 0.75rem;
 }
 
+/* The backstop under the chip's label budget. `label` is capped at 18 characters
+   when a place is built and re-capped on every read, which is what normally keeps
+   this row inside ~333 px at 360 px wide — but `.ghost` is `white-space: nowrap`
+   and a flex item's default `min-width: auto` refuses to shrink below its content,
+   so a hand-edited or future-format record would widen the row past the viewport
+   and scroll the whole page sideways. `min-width: 0` lets it shrink, the ellipsis
+   says it was shrunk, and 58% leaves the h1 its half of the row. */
+#origin-chip {
+  min-width: 0;
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 h1 {
   margin: 0;
   font-size: 1.4rem;
@@ -314,16 +328,67 @@ dialog#intro.intro-inflow {
   content: '✓\00a0';
 }
 
+/* Only the clear button is positioned against this; the input fills it. */
+.finder-field {
+  position: relative;
+}
+
 input[type='search'] {
   width: 100%;
   min-height: 2.75rem;
-  padding: 0.7rem 0.85rem;
+  /* Right padding clears the 2.75rem clear button plus its inset, so a long query
+     scrolls under the × rather than behind it. The left side keeps the original
+     0.85rem: a magnifier icon there costs ~1.65rem and the placeholder does not
+     have it to give at 320 px (measured — see the note in index.html). */
+  padding: 0.7rem 3rem 0.7rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 1rem; /* 16 px or iOS zooms the page on focus */
+}
+
+/* Safari draws its own × inside a search field. Ours is always visible, sits at
+   the same corner and has a real tap target; two of them is one too many. */
+input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 2.75rem ≈ 44 px, the same thumb target as every other control here — the plan
+   said 2.6rem, which is 41.6 px and under the floor `button.ghost` sets. Inset by
+   a hair so the square does not sit on the field's own border. */
+.finder-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.15rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.finder-clear:active {
+  background: var(--surface-2);
+}
+
+/* Sits outside `#results` on purpose: a heading is not a listbox option. */
+.results-head {
+  margin: 0.7rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .results {
@@ -340,55 +405,58 @@ input[type='search'] {
   overscroll-behavior: contain;
 }
 
+/* A search in flight keeps the previous rows on screen rather than emptying the
+   list and refilling it on every keystroke; the fade is what says they are one
+   keystroke stale. Set by `applyFinder`. */
+.results[aria-busy='true'] {
+  opacity: 0.6;
+}
+
 .results li + li {
   border-top: 1px solid var(--border);
 }
 
-.result-btn {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  width: 100%;
+/* A row is the `role="option"` itself, with no button inside it: an option must
+   not contain interactive content, and DOM focus has to stay in the input or the
+   phone keyboard closes mid-typing. `cursor: pointer` is therefore not
+   decoration — without it iOS Safari does not apply `:active` to a non-button
+   and the tap loses its feedback entirely. */
+.result-row {
   min-height: 2.75rem;
   padding: 0.6rem 0.7rem;
-  border: 0;
   border-radius: 8px;
-  background: none;
-  text-align: left;
+  cursor: pointer;
 }
 
-.result-btn:active {
+/* The tap and the keyboard highlight are one look. `aria-selected` is the only
+   thing that carries the highlight — focus never leaves the input — so the
+   attribute the screen reader reads and the background a sighted user sees can
+   never disagree. */
+.result-row:active,
+.result-row[aria-selected='true'] {
   background: var(--surface-2);
 }
 
-.result-code {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  font-size: 0.85rem;
-  min-width: 3.6rem;
+/* The address gets the line; a long one ellipsises rather than widening the
+   panel past the viewport. */
+.result-primary {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.result-name {
-  flex: 1;
-  min-width: 0;
-}
-
-.result-road {
+.result-secondary {
   display: block;
   color: var(--muted);
   font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .note {
   margin: 0.6rem 0 0;
   color: var(--muted);
   font-size: 0.85rem;
-}
-
-/* Reuses `.note` entirely; it only needs room below it, because unlike the
-   finder's note this one has the board immediately underneath. */
-#board-note {
-  margin: 0 0 0.75rem;
 }
 
 /* --- board --- */

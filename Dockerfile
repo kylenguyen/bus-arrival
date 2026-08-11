@@ -14,6 +14,9 @@ FROM node:22-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# Address index; regenerate with tools/build-places.mjs. Copied before dist so
+# this rarely-changing 1.6 MB layer stays cached across ordinary commits.
+COPY data ./data
 COPY --from=build /app/dist ./dist
 COPY public ./public
 COPY package.json ./

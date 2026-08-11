@@ -15,13 +15,16 @@ const haversineM = (aLat: number, aLon: number, bLat: number, bLon: number): num
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 };
 
-const normalise = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
-
 /**
- * The whole stop list is a few thousand rows, so it lives in memory and both
- * search and nearest-neighbour are linear scans. No index, no database — at
- * this size a scan is well under a millisecond and there is nothing to keep
- * in sync.
+ * The whole stop list is a few thousand rows, so it lives in memory and
+ * nearest-neighbour is a linear scan. No index, no database — at this size a
+ * scan is well under a millisecond and there is nothing to keep in sync.
+ *
+ * **There is no name search here any more.** The finder searches addresses
+ * (`PlaceIndex` in [places.ts](./places.ts)), and the only thing it still asks
+ * of this class is `get()`, the exact lookup behind the 5-digit stop-code
+ * escape hatch. Adding a scan back would put a second, worse finder beside the
+ * indexed one.
  */
 export class StopIndex {
   #stops: BusStop[] = [];
@@ -69,35 +72,6 @@ export class StopIndex {
 
   get(code: string): BusStop | null {
     return this.#byCode.get(code.trim()) ?? null;
-  }
-
-  search(query: string, limit = 20): BusStop[] {
-    const q = normalise(query);
-    if (q.length < 2) return [];
-
-    const scored: Array<{ stop: BusStop; score: number }> = [];
-
-    for (const stop of this.#stops) {
-      const code = stop.code.toLowerCase();
-      const description = normalise(stop.description);
-      const road = normalise(stop.roadName);
-
-      let score = 0;
-      if (code === q) score = 100;
-      else if (code.startsWith(q)) score = 90;
-      else if (description.startsWith(q)) score = 80;
-      else if (description.includes(q)) score = 60;
-      else if (road.startsWith(q)) score = 50;
-      else if (road.includes(q)) score = 40;
-      else continue;
-
-      scored.push({ stop, score });
-    }
-
-    return scored
-      .sort((a, b) => b.score - a.score || a.stop.code.localeCompare(b.stop.code))
-      .slice(0, limit)
-      .map((entry) => entry.stop);
   }
 
   /** Straight-line metres from a point to a stop. */

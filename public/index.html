@@ -51,19 +51,47 @@
           <button id="use-location" type="button" class="ghost" aria-pressed="false">
             Use my current location
           </button>
-          <p class="finder-or">or search for a stop</p>
+          <p class="finder-or">or search for an address</p>
         </div>
-        <label class="visually-hidden" for="search">Search bus stops</label>
-        <input
-          id="search"
-          type="search"
-          inputmode="search"
-          enterkeyhint="search"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="Stop code or name, e.g. 43179 or Toa Payoh"
-        />
-        <ul id="results" class="results" hidden></ul>
+        <label class="visually-hidden" for="search">Search for an address or postal code</label>
+        <!-- The × is functional, not chrome: clearing a mistyped 6-digit postal
+             code on a phone otherwise means long-press, select all, delete. It is
+             positioned against this wrapper, which is why the wrapper exists.
+
+             There is deliberately no magnifier icon beside it. Built and measured:
+             at 320 px it left the field 202.8 px of text and the placeholder needs
+             215.6 px, so "…Toa Payoh Hub" clipped to "…Toa Payoh H" — a truncated
+             example is worse than no icon at all, on a control whose panel already
+             says "or search for an address" and whose keyboard already shows a
+             search key. Without it the placeholder fits at every width down to
+             320 px with 13.6 px to spare. -->
+        <div class="finder-field">
+          <input
+            id="search"
+            type="search"
+            role="combobox"
+            aria-expanded="false"
+            aria-controls="results"
+            aria-autocomplete="list"
+            aria-activedescendant=""
+            inputmode="search"
+            enterkeyhint="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="e.g. 310155 or Toa Payoh Hub"
+          />
+          <button
+            id="finder-clear"
+            type="button"
+            class="finder-clear"
+            aria-label="Clear the search box"
+            hidden
+          >
+            ×
+          </button>
+        </div>
+        <p id="results-head" class="results-head" hidden></p>
+        <ul id="results" class="results" role="listbox" aria-label="Search results" hidden></ul>
         <p id="finder-note" class="note" hidden></p>
       </section>
 
@@ -78,9 +106,6 @@
         </div>
       </section>
 
-      <!-- Only ever says one thing: the origin stop is no longer in service. -->
-      <p id="board-note" class="note" hidden></p>
-
       <section id="board" class="board" aria-live="polite" aria-label="Nearby bus stops"></section>
     </main>
 
@@ -90,6 +115,11 @@
       <span>* scheduled, not tracked</span>
       <span class="dot">·</span>
       <span>Data © LTA, via DataMall</span>
+      <span class="dot">·</span>
+      <!-- The Singapore Open Data Licence requires attribution wherever the data
+           is shown, not only in the README. Addresses come from the postal-code
+           index in data/, which is OneMap-derived. -->
+      <span>Addresses © OneMap</span>
     </footer>
 
     <!-- First visit only, and only until a door is chosen. Static markup, so
@@ -109,9 +139,11 @@
         <p class="intro-sub" id="intro-gps-sub">Stops nearest you</p>
         <!-- Replaces the location button when it cannot possibly work. -->
         <p class="intro-sub" id="intro-no-gps" hidden></p>
+        <!-- The label is `ADDRESS_DOOR_LABEL` in public/origin.js, written out
+             here because static markup cannot import it. Keep the two in step. -->
         <button id="intro-code" type="button" class="ghost"
-                aria-describedby="intro-code-sub">Enter a stop code</button>
-        <p class="intro-sub" id="intro-code-sub">A stop you already know</p>
+                aria-describedby="intro-code-sub">Enter an address</button>
+        <p class="intro-sub" id="intro-code-sub">A postal code, building or road</p>
       </div>
       <p class="intro-fine">
         Your location is only used to rank nearby stops. It is not logged or saved.
