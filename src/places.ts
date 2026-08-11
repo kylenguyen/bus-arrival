@@ -232,6 +232,67 @@ const recordTokens = (record: PlaceRecord, want: 'lead' | 'rest'): string[] => {
 const STOP_WORDS = new Set(['BLK', 'BLOCK']);
 
 /**
+ * What a Singaporean types for a road type, mapped to what the dump stores.
+ *
+ * Roads are stored in full — `ANG MO KIO AVENUE 3` — and only the last query token
+ * may prefix-match, so a finished abbreviation in the middle of a query could
+ * previously match nothing at all: `woodlands ave 5` returned zero rows. That is
+ * not an academic case. **LTA's own stop descriptions write "Ave"**, so a card in
+ * this app reads `Woodlands Ave 5` and the finder could not find what the board
+ * had just shown.
+ *
+ * **A variant, never a replacement.** Each token matches as itself *or* as its
+ * expansion, which is what keeps `st george` finding `ST. GEORGE'S ROAD`: rewriting
+ * `ST` to `STREET` would have broken that record to fix the abbreviation.
+ *
+ * One expansion per key, deliberately. A key with two would make the expanded
+ * query string below combinatorial for the sake of a ranking nicety, so `GDN` and
+ * `GDNS` are separate keys rather than one key with two answers.
+ */
+const EXPANSIONS = new Map([
+  ['AV', 'AVENUE'],
+  ['AVE', 'AVENUE'],
+  ['BT', 'BUKIT'],
+  ['CL', 'CLOSE'],
+  ['CRES', 'CRESCENT'],
+  ['CTRL', 'CENTRAL'],
+  ['DR', 'DRIVE'],
+  ['GDN', 'GARDEN'],
+  ['GDNS', 'GARDENS'],
+  ['JLN', 'JALAN'],
+  ['KG', 'KAMPONG'],
+  ['LOR', 'LORONG'],
+  ['MKT', 'MARKET'],
+  ['NTH', 'NORTH'],
+  ['PK', 'PARK'],
+  ['PL', 'PLACE'],
+  ['RD', 'ROAD'],
+  ['ST', 'STREET'],
+  ['STH', 'SOUTH'],
+  ['TER', 'TERRACE'],
+  ['TG', 'TANJONG'],
+  ['UPP', 'UPPER'],
+]);
+
+/** A token's forms, the typed one first. One element for anything not abbreviated. */
+const variantsOf = (token: string): string[] => {
+  const expansion = EXPANSIONS.get(token);
+  return expansion === undefined ? [token] : [token, expansion];
+};
+
+/**
+ * The query with every abbreviation written out, or `null` when it holds none.
+ *
+ * `null` rather than the unchanged string is what keeps this change contained to
+ * the queries it is about: `scoreOf` skips its second pass entirely, so a query
+ * with nothing to expand is scored by exactly the ladder it was scored by before.
+ */
+const expandQuery = (tokens: string[]): string | null => {
+  if (!tokens.some((token) => EXPANSIONS.has(token))) return null;
+  return tokens.map((token) => EXPANSIONS.get(token) ?? token).join(' ');
+};
+
+/**
  * The query's tokens, single characters included. The index skips those, but a
  * user who typed `ang mo kio ave 3` means avenue 3 and not avenue 10, so a short
  * token still has to be matched against the stored strings.
@@ -256,15 +317,35 @@ const queryTokens = (query: string): string[] => {
  * than a space, which is what makes `GEORGE` find `ST. GEORGE'S ROAD` — the
  * apostrophe and the full stop are boundaries too.
  */
-const wordMatch = (text: string, token: string, allowPrefix: boolean): boolean => {
-  for (let from = 0; ; ) {
-    const at = text.indexOf(token, from);
-    if (at === -1) return false;
+const wordMatch = (text: string, token: string, allowPrefix: boolean): boolean =>
+  wordIndexOf(text, token, 0, allowPrefix) !== -1;
+
+/**
+ * Where `text` holds `token` as a word, at or after `from`, or -1. Same boundary
+ * rule as `wordMatch`, which is written in terms of this — the position is what
+ * `holdsInOrder` needs, and two copies of the boundary logic would be two things
+ * to keep in step.
+ */
+const wordIndexOf = (text: string, token: string, from: number, allowPrefix: boolean): number => {
+  for (let at = text.indexOf(token, from); at !== -1; at = text.indexOf(token, at + 1)) {
     const before = at === 0 ? '' : text.charAt(at - 1);
     const after = text.charAt(at + token.length);
-    if (!ALNUM.test(before) && (allowPrefix || !ALNUM.test(after))) return true;
-    from = at + 1;
+    if (!ALNUM.test(before) && (allowPrefix || !ALNUM.test(after))) return at;
   }
+  return -1;
+};
+
+/** The first alnum run of a field, or `''`. Single characters included, unlike the index. */
+const firstToken = (text: string): string => {
+  let start = -1;
+  for (let i = 0; i <= text.length; i += 1) {
+    if (i < text.length && isAlnum(text.charCodeAt(i))) {
+      if (start === -1) start = i;
+      continue;
+    }
+    if (start !== -1) return text.slice(start, i);
+  }
+  return '';
 };
 
 /**
@@ -282,22 +363,117 @@ const matchesAll = (record: PlaceRecord, tokens: string[]): boolean => {
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     if (token === undefined) continue;
-    if (!wordMatch(text, token, i === tokens.length - 1)) return false;
+    const allowPrefix = i === tokens.length - 1;
+    // Any form of the token satisfies it. The prefix rule is a property of the
+    // token's *position*, so it applies to the expansion too: a half-typed last
+    // word is half-typed whichever spelling the record uses.
+    if (!variantsOf(token).some((variant) => wordMatch(text, variant, allowPrefix))) return false;
   }
   return true;
 };
 
-/** D3's ladder. A row only reaches here having matched every token, hence the floor of 20. */
-const scoreOf = (record: PlaceRecord, query: string, tokens: string[]): number => {
+/**
+ * Does `text` hold every query token as a word, in the query's order, with gaps
+ * allowed? `TOA PAYOH HUB` holds in `TOA PAYOH HDB HUB`, which no substring rung
+ * can see — the query skips a word in the middle of the name.
+ *
+ * The last token may still match as a prefix, because it is the one being typed;
+ * the position rule is the same one `matchesAll` applies.
+ */
+const holdsInOrder = (text: string, tokens: string[]): boolean => {
+  if (text === '') return false;
+  let from = 0;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token === undefined) continue;
+    const allowPrefix = i === tokens.length - 1;
+    let next = -1;
+    for (const variant of variantsOf(token)) {
+      const at = wordIndexOf(text, variant, from, allowPrefix);
+      if (at !== -1 && (next === -1 || at + variant.length < next)) next = at + variant.length;
+    }
+    if (next === -1) return false;
+    from = next;
+  }
+  return true;
+};
+
+/**
+ * Whether the query names this record from its beginning.
+ *
+ * This is what keeps a branded row off the top of an abbreviated road search.
+ * Measured against the real index: without it, `woodlands ave 5` answers with
+ * `HDB-WOODLANDS` and `ang mo kio ave 3` with `KEBUN BARU HEIGHTS`, because a
+ * building sitting on the road scores exactly what the road itself scores and wins
+ * the postal-code tiebreak. A name led by a word the user did not type is a worse
+ * answer than the road they did type.
+ *
+ * **Only building-led records.** A road-only record has no brand in front of it —
+ * `LORONG 1 TOA PAYOH` leads with a road type, not with a tenant — so applying
+ * this to roads would tax every block on a named lorong for the way roads are
+ * spelled. Rungs 90 and 80 already require the query to align with the start of the
+ * building, so a record on those rungs can never be caught by this and needs no
+ * separate guard.
+ */
+const leadIsNamed = (record: PlaceRecord, tokens: string[]): boolean => {
+  const lead = firstToken(record.building);
+  if (lead === '') return true;
+
+  const last = tokens[tokens.length - 1];
+  for (const token of tokens) {
+    if (variantsOf(token).includes(lead)) return true;
+    // A half-typed last word still names the lead it is on its way to spelling.
+    if (token === last && lead.startsWith(token)) return true;
+  }
+  return false;
+};
+
+/** D3's ladder, against one spelling of the query. The floor is 20: a row only reaches here having matched every token. */
+const ladderOf = (record: PlaceRecord, query: string, blockRoad: string): number => {
+  if (record.building === query) return 90;
+  if (record.building.startsWith(query)) return 80;
+  if (record.road === query || blockRoad === query) return 70;
+  if (record.building.includes(query)) return 60;
+  if (record.road.startsWith(query) || blockRoad.startsWith(query)) return 50;
+  if (record.road.includes(query)) return 40;
+  return 20;
+};
+
+/** The rung for a name the query spells out in order but not contiguously. */
+const IN_ORDER = 55;
+
+/** What a name led by a word the user did not type gives up. */
+const UNNAMED_LEAD = 15;
+
+
+/**
+ * The ladder, plus the block bonus, over both spellings of the query.
+ *
+ * The expanded pass is what stops an abbreviated query landing on the 20 floor and
+ * ranking below noise: `woodlands ave 5` matches nothing in `WOODLANDS AVENUE 5`
+ * as typed, so without it every hit would score the same and sort by postal code.
+ * The higher of the two wins — an expansion can only ever help a row, never demote
+ * one that already matched as typed.
+ */
+const scoreOf = (
+  record: PlaceRecord,
+  query: string,
+  expanded: string | null,
+  tokens: string[],
+): number => {
   const blockRoad = record.block && record.road ? `${record.block} ${record.road}` : record.road;
 
-  let score = 20;
-  if (record.building === query) score = 90;
-  else if (record.building.startsWith(query)) score = 80;
-  else if (record.road === query || blockRoad === query) score = 70;
-  else if (record.building.includes(query)) score = 60;
-  else if (record.road.startsWith(query) || blockRoad.startsWith(query)) score = 50;
-  else if (record.road.includes(query)) score = 40;
+  let score = ladderOf(record, query, blockRoad);
+  if (expanded !== null) score = Math.max(score, ladderOf(record, expanded, blockRoad));
+
+  // Above "the building name contains the query" and below "the road is exactly
+  // the query": a gapped match is a weaker signal than a contiguous one, so this
+  // does not outrank 60 on its own.
+  if (score < IN_ORDER && holdsInOrder(record.building, tokens)) score = IN_ORDER;
+
+  // Measured on the real index: this is what puts the road the user named above
+  // the branded building sitting on it.
+  if (!leadIsNamed(record, tokens)) score -= UNNAMED_LEAD;
 
   // What puts Blk 155 above its neighbours for "155 toa payoh": a query that
   // skips the middle of the road name prefix-matches nothing, so without this
@@ -437,12 +613,13 @@ export class PlaceIndex {
     const candidates = this.#candidates(tokens);
     if (!candidates) return [];
 
+    const expanded = expandQuery(tokens);
     const scored: Array<{ record: PlaceRecord; score: number }> = [];
     for (const at of candidates) {
       const record = this.#records[at];
       if (!record) continue;
       if (!matchesAll(record, tokens)) continue;
-      scored.push({ record, score: scoreOf(record, q, tokens) });
+      scored.push({ record, score: scoreOf(record, q, expanded, tokens) });
     }
 
     return scored
@@ -456,11 +633,27 @@ export class PlaceIndex {
    * truncated. A token with no list is not a dead end — block numbers are not
    * indexed — it simply cannot generate candidates, and `matchesAll` still has
    * to be satisfied by it.
+   *
+   * An abbreviated token contributes the **union** of its forms, and that union is
+   * a correctness requirement rather than a widening. `AVE` exists in the index in
+   * its own right — building names contain it — so a literal-only lookup would give
+   * `woodlands ave 5` a short `AVE` list, choose it as the most selective token,
+   * and exclude every `WOODLANDS AVENUE 5` row from scoring. Fixing `matchesAll`
+   * alone would still have returned nothing.
+   *
+   * Deduplicated because a record can hold both forms, and a candidate scored
+   * twice is a row returned twice.
+   *
+   * The union is concatenated typed-form-first, so the lead-token-first ordering
+   * that makes `MAX_CANDIDATES` safe to truncate holds within each half but not
+   * across the seam. That costs nothing in practice: a union only wins when it is
+   * the most selective list in the query, which is to say short enough that the
+   * ceiling is never reached.
    */
   #candidates(tokens: string[]): number[] | null {
     let best: number[] | null = null;
     for (const token of tokens) {
-      const list = this.#tokens.get(token);
+      const list = this.#postingsFor(token);
       if (!list || list.length === 0) continue;
       if (!best || list.length < best.length) best = list;
     }
@@ -479,6 +672,23 @@ export class PlaceIndex {
 
     if (!best) return null;
     return best.length > MAX_CANDIDATES ? best.slice(0, MAX_CANDIDATES) : best;
+  }
+
+  /**
+   * One token's postings across all its forms: the stored list itself when there is
+   * nothing to expand, so the overwhelmingly common case allocates nothing.
+   */
+  #postingsFor(token: string): number[] | null {
+    const variants = variantsOf(token);
+    if (variants.length === 1) return this.#tokens.get(token) ?? null;
+
+    const lists = variants.map((variant) => this.#tokens.get(variant)).filter(Boolean);
+    if (lists.length === 0) return null;
+    if (lists.length === 1) return lists[0] ?? null;
+
+    const seen = new Set<number>();
+    for (const list of lists) for (const at of list ?? []) seen.add(at);
+    return [...seen];
   }
 
   /** The union of every posting list whose token starts with a half-typed word. */

@@ -555,14 +555,46 @@ describe('taglineFor', () => {
     );
   });
 
-  // The mock warning and the tagline make contradictory claims, so only `app.js`
-  // — which knows whether mock mode is on — may choose between them. This pins
-  // that this function can never be the one that clobbers the warning.
-  it('never returns the mock-mode warning', () => {
-    const MOCK = 'Demo data — no LTA API key configured yet';
+  // Both clauses, always. The demo notice used to overwrite this sentence and
+  // latch, so the origin clause never came back for the rest of the session; now
+  // the two are composed and the contradiction is impossible to construct.
+  it('keeps the origin clause in mock mode', () => {
+    assert.equal(origin.taglineFor(GPS_RECORD, true), 'Stops nearest you · demo timings, not live');
+    assert.equal(
+      origin.taglineFor(PLACE_RECORD, true),
+      'Stops near 155 Lorong 1 Toa Payoh · demo timings, not live',
+    );
+    assert.equal(
+      origin.taglineFor(null, true),
+      'Any stop in Singapore · demo timings, not live',
+    );
+  });
+
+  // An omitted argument must keep the wording every existing caller already gets.
+  // The other reading would have old call sites silently claiming demo data.
+  it('reads an absent mock flag as live', () => {
     for (const record of [GPS_RECORD, PLACE_RECORD, null]) {
-      assert.notEqual(origin.taglineFor(record), MOCK);
+      assert.equal(origin.taglineFor(record), origin.taglineFor(record, false));
       assert.match(origin.taglineFor(record), /live from LTA$/);
+    }
+  });
+
+  // "No LTA API key configured yet" is written for whoever deploys this, not for
+  // whoever is waiting at the stop.
+  it('never mentions the deployment in either mode', () => {
+    for (const mock of [true, false, undefined]) {
+      for (const record of [GPS_RECORD, PLACE_RECORD, null]) {
+        const line = origin.taglineFor(record, mock);
+        assert.equal(line.includes('API key'), false);
+        assert.equal(line.includes('configured'), false);
+      }
+    }
+  });
+
+  // In mock mode nothing came from LTA, so the line must not say it did.
+  it('drops the LTA claim when the timings are synthetic', () => {
+    for (const record of [GPS_RECORD, PLACE_RECORD, null]) {
+      assert.equal(origin.taglineFor(record, true).includes('LTA'), false);
     }
   });
 });
@@ -1185,7 +1217,9 @@ describe('placeFromRow', () => {
       lat: 1.3325,
       lon: 103.8475,
     });
-    assert.equal(place.label, 'Toa Payoh Hdb Hub');
+    // `HDB` rather than `Hdb`: whitespace collapsing runs before the per-word
+    // acronym check, so a tab inside a name cannot hide a word from the list.
+    assert.equal(place.label, 'Toa Payoh HDB Hub');
     assert.equal(place.label.includes('\n'), false);
     assert.equal(place.label.includes('\t'), false);
   });
@@ -1353,25 +1387,29 @@ describe('finderState', () => {
   const RECENTS = [PLACE_A, PLACE_B];
   const RESULTS = [{ place: PLACE_A }, { place: PLACE_B }];
 
-  it('shows Recent and nothing else for an empty box', () => {
-    const panel = origin.finderState({ value: '', results: [], status: 'idle', recents: RECENTS });
+  // Recent moved out of the listbox and into `originsState`, which is what fixes
+  // `#results` announcing "Search results" over the Recent list. An empty box now
+  // collapses the listbox rather than filling it with rows nobody searched for.
+  it('collapses the listbox for an empty box', () => {
+    const panel = origin.finderState({ value: '', results: [], status: 'idle' });
     assert.equal(panel.state, 'idle');
-    assert.equal(panel.rows.length, 2);
-    assert.equal(panel.heading, 'Recent');
+    assert.deepEqual(panel.rows, []);
+    assert.equal(panel.heading, '');
     assert.equal(panel.note, '');
     assert.equal(panel.busy, false);
-    assert.equal(panel.expanded, true);
+    assert.equal(panel.expanded, false);
     assert.equal(panel.showClear, false);
   });
 
-  it('asks for one more character at one character, keeping Recent on screen', () => {
-    const panel = origin.finderState({ value: 'T', results: [], status: 'idle', recents: RECENTS });
+  it('asks for one more character at one character, with no rows', () => {
+    const panel = origin.finderState({ value: 'T', results: [], status: 'idle' });
     assert.equal(panel.state, 'short');
-    assert.equal(panel.rows.length, 2);
-    assert.equal(panel.heading, 'Recent');
+    assert.deepEqual(panel.rows, []);
+    assert.equal(panel.heading, '');
     assert.equal(panel.note, 'Keep typing — 2 letters, or a 6-digit postal code.');
     assert.equal(panel.busy, false);
-    assert.equal(panel.expanded, true);
+    assert.equal(panel.expanded, false);
+    assert.equal(panel.showClear, true);
   });
 
   // The list must not empty and refill on every keystroke, so a search in flight
@@ -1423,22 +1461,21 @@ describe('finderState', () => {
     assert.equal(panel.expanded, false);
   });
 
-  // The nicest property of the whole model: with the network down, the addresses
-  // used most are still one tap away and cost no request at all.
-  it('falls back to Recent when the search is unavailable', () => {
+  // This state used to be the one place Recent earned its keep, and that is now
+  // true of every state: the destinations list sits above the box permanently, so
+  // an unavailable search costs the note and nothing else.
+  it('reports an unavailable search without borrowing rows', () => {
     const panel = origin.finderState({
       value: 'toa payoh',
       results: [],
       status: 'offline',
-      recents: RECENTS,
     });
     assert.equal(panel.state, 'offline');
-    assert.equal(panel.rows.length, 2);
-    assert.equal(panel.rows[0].place.label, 'Blk 155');
-    assert.equal(panel.heading, 'Recent');
+    assert.deepEqual(panel.rows, []);
+    assert.equal(panel.heading, '');
     assert.equal(panel.note, 'Search is unavailable right now.');
     assert.equal(panel.busy, false);
-    assert.equal(panel.expanded, true);
+    assert.equal(panel.expanded, false);
   });
 
   it('asks for nothing below two characters and asks at exactly two', () => {
@@ -1461,18 +1498,15 @@ describe('finderState', () => {
     assert.equal(query('310155'), '310155');
   });
 
-  it('shows recents in idle, short and offline, and results in results', () => {
+  it('holds search results only, in every state', () => {
     const rowsFor = (value: string, status: string, results: unknown[]) =>
-      origin.finderState({ value, results, status, recents: RECENTS }).rows;
+      origin.finderState({ value, results, status }).rows;
     for (const { value, status } of [
       { value: '', status: 'idle' },
       { value: 't', status: 'idle' },
       { value: 'toa payoh', status: 'offline' },
     ]) {
-      assert.deepEqual(
-        rowsFor(value, status, []).map((row: { place: { label: string } }) => row.place.label),
-        ['Blk 155', 'Marina Bay Sands'],
-      );
+      assert.deepEqual(rowsFor(value, status, []), []);
     }
     assert.deepEqual(
       rowsFor('toa payoh', 'ok', [{ place: PLACE_B }]).map(
@@ -1480,6 +1514,23 @@ describe('finderState', () => {
       ),
       ['Marina Bay Sands'],
     );
+  });
+
+  // The regression guard for the whole task: the argument is gone, so passing it
+  // must make no difference. If this ever fails, a recents branch crept back in.
+  it('ignores a recents argument entirely', () => {
+    for (const { value, status } of [
+      { value: '', status: 'idle' },
+      { value: 't', status: 'idle' },
+      { value: 'toa payoh', status: 'offline' },
+      { value: 'toa payoh', status: 'searching' },
+      { value: 'atlantis interchange', status: 'ok' },
+    ]) {
+      assert.deepEqual(
+        origin.finderState({ value, results: [], status, recents: RECENTS }),
+        origin.finderState({ value, results: [], status }),
+      );
+    }
   });
 
   // Filtered before render rather than refused on tap: a row that cannot become
@@ -1520,5 +1571,246 @@ describe('finderState', () => {
       recents: [],
     });
     assert.equal(panel.note, 'No address matched.');
+  });
+});
+
+// The destinations list. Every case below is one of the rules in the plan's A1
+// table, in that order, so a failure names the rule it broke.
+describe('originsState', () => {
+  const GPS = { mode: 'gps' };
+  const supported = { geolocationSupported: true };
+
+  it('offers the location door alone when nothing has been used yet', () => {
+    const { rows } = origin.originsState({ origin: null, recents: [], ...supported });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, 'gps');
+    assert.equal(rows[0].place, null);
+    assert.equal(rows[0].primary, 'Near you');
+    assert.equal(rows[0].current, false);
+    assert.equal(rows[0].showUpdate, false);
+    assert.equal(rows[0].detail, 'Uses your device location');
+    assert.equal(rows[0].status, '');
+  });
+
+  // The whole point of the redesign: the row that says what the board is doing
+  // is not also the button that re-does it.
+  it('marks the gps row current and asks for the update affordance', () => {
+    const { rows } = origin.originsState({ origin: GPS, recents: [], ...supported });
+    assert.equal(rows[0].current, true);
+    assert.equal(rows[0].showUpdate, true);
+    assert.equal(rows[0].status, 'Showing now');
+    assert.equal(rows[0].detail, '');
+  });
+
+  it('omits the gps row entirely when geolocation cannot work', () => {
+    const { rows } = origin.originsState({
+      origin: null,
+      recents: [],
+      geolocationSupported: false,
+    });
+    assert.deepEqual(rows, []);
+  });
+
+  it('still lists recents with no gps row', () => {
+    const { rows } = origin.originsState({
+      origin: null,
+      recents: [PLACE_A, PLACE_B],
+      geolocationSupported: false,
+    });
+    assert.equal(rows.length, 2);
+    assert.equal(
+      rows.some((row: { kind: string }) => row.kind === 'gps'),
+      false,
+    );
+  });
+
+  // A caller that forgets the flag loses the primary door, which one manual pass
+  // catches. The lenient reading would ship a dead button to the devices that
+  // cannot use it, which nothing catches.
+  it('treats a missing flag as unsupported rather than guessing', () => {
+    const { rows } = origin.originsState({ origin: GPS, recents: [] });
+    assert.deepEqual(rows, []);
+  });
+
+  it('keeps recents in stored order under the gps row', () => {
+    const third = { ...PLACE_A, postal: '310159', label: 'Blk 159' };
+    const { rows } = origin.originsState({
+      origin: GPS,
+      recents: [PLACE_A, PLACE_B, third],
+      ...supported,
+    });
+    assert.equal(rows.length, 4);
+    assert.equal(rows[0].kind, 'gps');
+    assert.deepEqual(
+      rows.slice(1).map((row: { place: { postal: string } }) => row.place.postal),
+      ['310155', '018956', '310159'],
+    );
+  });
+
+  it('shows a current place once, not twice, when recents also hold it', () => {
+    const current = { ...PLACE_A, label: 'Blk 155 Toa' };
+    const { rows } = origin.originsState({
+      origin: current,
+      recents: [PLACE_A, PLACE_B],
+      ...supported,
+    });
+    assert.equal(rows.length, 3);
+    assert.equal(rows[1].place.label, 'Blk 155 Toa');
+    assert.equal(rows[1].current, true);
+    assert.equal(rows[1].status, 'Showing now');
+    assert.equal(rows[2].current, false);
+  });
+
+  it('dedupes a stop row by its code', () => {
+    const moved = { ...PLACE_STOP, lat: 1.4, lon: 103.9, label: 'Stop moved' };
+    const { rows } = origin.originsState({
+      origin: moved,
+      recents: [PLACE_STOP],
+      ...supported,
+    });
+    assert.equal(rows.length, 2);
+    assert.equal(rows[1].place.label, 'Stop moved');
+  });
+
+  it('dedupes a road-only row by its coordinate', () => {
+    const road = { mode: 'place', postal: null, code: null, label: 'Lorong 1', name: 'Lorong 1 Toa Payoh', lat: 1.33241, lon: 103.847 };
+    const { rows } = origin.originsState({
+      origin: { ...road, label: 'Lor 1' },
+      recents: [road],
+      ...supported,
+    });
+    assert.equal(rows.length, 2);
+    assert.equal(rows[1].place.label, 'Lor 1');
+  });
+
+  it('inserts a current place that recents do not hold, directly under gps', () => {
+    const { rows } = origin.originsState({
+      origin: PLACE_STOP,
+      recents: [PLACE_A, PLACE_B],
+      ...supported,
+    });
+    assert.equal(rows.length, 4);
+    assert.equal(rows[1].place.code, '43179');
+    assert.equal(rows[1].current, true);
+  });
+
+  it('drops recents the board could not be ranked from', () => {
+    const { rows } = origin.originsState({
+      origin: null,
+      recents: [
+        { ...PLACE_A, lat: NaN },
+        { ...PLACE_B, lat: 0, lon: 0 },
+        { ...PLACE_A, postal: '310157', lon: undefined },
+        PLACE_B,
+      ],
+      ...supported,
+    });
+    assert.equal(rows.length, 2);
+    assert.equal(rows[1].place.postal, '018956');
+  });
+
+  it('caps the place rows at five however many recents there are', () => {
+    const eight = Array.from({ length: 8 }, (_, i) => ({ ...PLACE_A, postal: `31015${i}` }));
+    const { rows } = origin.originsState({ origin: GPS, recents: eight, ...supported });
+    assert.equal(rows.filter((row: { kind: string }) => row.kind === 'place').length, 5);
+  });
+
+  it('names the list', () => {
+    assert.equal(origin.originsState({ origin: null, recents: [], ...supported }).heading, 'Show stops near');
+  });
+
+  // The long name leads and the postal goes underneath, the same two lines
+  // `renderRows` gives a search result — the two lists are one list split by a rule.
+  it('leads with the name and details the postal, like a search row', () => {
+    const { rows } = origin.originsState({ origin: null, recents: [PLACE_A], ...supported });
+    assert.equal(rows[1].primary, '155 Lorong 1 Toa Payoh');
+    assert.equal(rows[1].detail, 'Singapore 310155');
+  });
+
+  it('details a stop row by its code and a road-only row not at all', () => {
+    const road = { mode: 'place', postal: null, code: null, label: 'Lorong 1', name: 'Lorong 1 Toa Payoh', lat: 1.33241, lon: 103.847 };
+    const { rows } = origin.originsState({
+      origin: null,
+      recents: [PLACE_STOP, road],
+      ...supported,
+    });
+    assert.equal(rows[1].detail, 'Stop 43179');
+    assert.equal(rows[2].detail, '');
+  });
+
+  it('never offers a place row without a place to commit', () => {
+    const { rows } = origin.originsState({
+      origin: GPS,
+      recents: [PLACE_A, null, undefined, PLACE_B],
+      ...supported,
+    });
+    for (const row of rows.filter((r: { kind: string }) => r.kind === 'place')) {
+      assert.ok(row.place);
+      assert.equal(origin.isUsableCoord(row.place.lat, row.place.lon), true);
+    }
+  });
+});
+
+// Direct coverage, which this function did not have — it was only exercised
+// through `placeFromRow`, which is why the acronym weakness survived to be a
+// documented open issue rather than a failing assertion.
+describe('titleCase', () => {
+  it('keeps the acronyms that are said as letters', () => {
+    assert.equal(origin.titleCase('HDB HUB'), 'HDB Hub');
+    assert.equal(origin.titleCase('NTUC FAIRPRICE'), 'NTUC Fairprice');
+    assert.equal(origin.titleCase('TOA PAYOH HDB HUB'), 'Toa Payoh HDB Hub');
+    assert.equal(origin.titleCase('SMRT BUS DEPOT'), 'SMRT Bus Depot');
+  });
+
+  // The reason there is no "short and no vowels" heuristic: every one of these
+  // would qualify for it, and every one of them is read as a word.
+  it('title-cases the abbreviations a heuristic would have shouted', () => {
+    assert.equal(origin.titleCase("ST. GEORGE'S ROAD"), "St. George's Road");
+    assert.equal(origin.titleCase('BLK 155 LORONG 1 TOA PAYOH'), 'Blk 155 Lorong 1 Toa Payoh');
+    assert.equal(origin.titleCase('JLN BESAR'), 'Jln Besar');
+    assert.equal(origin.titleCase('WOODLANDS AVE 5'), 'Woodlands Ave 5');
+    assert.equal(origin.titleCase('UPP THOMSON RD'), 'Upp Thomson Rd');
+  });
+
+  it('leaves ordinary names alone', () => {
+    assert.equal(origin.titleCase('MARINA BAY SANDS'), 'Marina Bay Sands');
+    assert.equal(origin.titleCase('ANG MO KIO AVENUE 3'), 'Ang Mo Kio Avenue 3');
+  });
+
+  // Found by looking at the rendered rows for `woodlands ave 5`, not by reasoning:
+  // an acronym joined to a name by a hyphen is one space-delimited word and two
+  // names, and a space-splitting implementation renders it `Hdb-Woodlands`. The
+  // real index is full of these.
+  it('finds an acronym joined to a name by punctuation', () => {
+    assert.equal(origin.titleCase('HDB-WOODLANDS'), 'HDB-Woodlands');
+    assert.equal(origin.titleCase('HDB-ST GEORGES RD'), 'HDB-St Georges Rd');
+    assert.equal(origin.titleCase('MRT/LRT STATION'), 'MRT/LRT Station');
+    assert.equal(origin.titleCase('(DBS)'), '(DBS)');
+  });
+
+  // The apostrophe has to stay inside the run: outside it, the trailing S becomes
+  // its own run and capitalises to `George'S`.
+  it('keeps a possessive lower-case', () => {
+    assert.equal(origin.titleCase("GEORGE'S"), "George's");
+    assert.equal(origin.titleCase("ST. GEORGE'S ROAD, BLK 10"), "St. George's Road, Blk 10");
+  });
+
+  // Every documented member round-trips. Cheaper to keep true than a sortedness
+  // assertion, and it is the property that actually matters.
+  it('capitalises every listed acronym, from either case', () => {
+    for (const word of [
+      'CPF', 'HDB', 'ITE', 'JTC', 'LRT', 'MRT', 'MSCP', 'NTU', 'NTUC',
+      'NUS', 'PSA', 'SBS', 'SIT', 'SMRT', 'SMU', 'SUTD', 'URA',
+    ]) {
+      assert.equal(origin.titleCase(word), word);
+      assert.equal(origin.titleCase(word.toLowerCase()), word);
+    }
+  });
+
+  it('collapses whitespace and survives a non-string', () => {
+    assert.equal(origin.titleCase('  TOA   PAYOH  '), 'Toa Payoh');
+    assert.equal(origin.titleCase(null), '');
+    assert.equal(origin.titleCase(undefined), '');
+    assert.equal(origin.titleCase(42), '');
   });
 });

@@ -1,5 +1,14 @@
 # First-run journey split: choose location or a stop code
 
+> **Design record, not current documentation.** The plan below is kept as it was
+> approved. Two sections at the end are the deltas, and the second one supersedes
+> everything this document says about the internals of `#finder`: the
+> `#use-location` button, `.finder-loc`, `.finder-or` and the `aria-pressed` ✓ no
+> longer exist. Read *Superseded — `#use-location` and the two-door panel* before
+> trusting any `#finder` markup, CSS or `openSearch`/`closeSearch` detail here. The
+> two doors, `decideBoot`, the intro dialog and the transient-activation rule are
+> all still current.
+
 ## Context
 
 Today the page calls `void locate()` at module evaluation ([public/app.js:556](public/app.js#L556)). A first-time visitor gets the browser's native geolocation prompt with no explanation of what the site is or why it wants their position. If they refuse, they land on a gate plus an auto-opened search box whose only behaviour is to silently *pin* whatever they tap — there is no way to say "just show me stop 43179".
@@ -409,3 +418,42 @@ over the code would reintroduce three of these.
    shells, so a user standing at the stop they had named would get the same eight
    cards back, signature unchanged, still labelled `(This stop)` and bare metres
    where walking times belong.
+
+## Superseded — `#use-location` and the two-door panel
+
+Recorded 12 Aug 2026. **Everything above about `#finder`'s internals is now
+history.** The plan's own row 11 is the tell: it treated "tagline clobbering mock
+mode" as cosmetic and solved it with the `mockActive` latch, which is exactly what
+made the demo notice permanently destroy the sentence saying where the board was
+ranked from.
+
+What changed, and why a reader of the sections above must not reintroduce it:
+
+- **`#use-location`, `.finder-loc` and `.finder-or` are gone.** The single control
+  that "also serves Journey A's other door" (line 257) made state and action the
+  same object: `#use-location[aria-pressed='true']::before` drew a ✓ on a button
+  that still fired geolocation, so the state the user is in 95% of the time read as
+  "already done, nothing to do". `aria-pressed` on a button that cannot be
+  un-pressed is toggle semantics for a non-toggle.
+- **`#finder` is a destinations card.** `#origins-head` ("Show stops near"), then
+  `#origins` — a `<ul>` of `<li><button class="origin-row">` rows for the location
+  door and each recent address — then a rule, then the search field and
+  `#finder-hint`. The row the board is using carries `aria-current="true"`; the one
+  affordance that re-runs a fix is `.origin-update` inside that row. See D6a in
+  docs/postal-code-finder.md for the row model.
+- **The card has a surface of its own** (`--surface`, token border, `--radius`,
+  `--shadow`) and `#results` gave up its border and shadow to avoid a card inside a
+  card. The chip's `▾` now opens a list, which is what a caret has always promised.
+- **`openSearch` takes a focus target.** From the chip it focuses the list, because
+  raising the phone keyboard over the rows hides the thing the redesign exists to
+  show; from the address door (this document's Journey A) it still focuses the
+  input.
+- **The `mockActive` latch is deleted.** `taglineFor(origin, mock)` composes both
+  clauses, so row 11's contradiction cannot be constructed rather than being
+  guarded against.
+- **`startWithLocation()` still closes the card**, and item 8 above still holds —
+  the location door is still inside the panel, it is a row now.
+
+The transient-activation rule is unchanged and still governs: the delegated
+`#origins` click handler reaches `startWithLocation()` with nothing awaited above
+it.

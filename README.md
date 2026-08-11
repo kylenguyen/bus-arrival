@@ -46,14 +46,18 @@ not a bug.
    highlight; Enter takes the highlighted row over anything typed. Choosing an
    address pins nothing; ★ is still how a stop is pinned. Distances are then
    metres and a walking time from that address.
-6. The last five addresses chosen come back as a Recent list whenever the box is
-   opened empty, and are what is offered when the search itself is unreachable.
-   A postal code therefore has to be remembered once, which is the point — it is
-   not printed on the pole the way a stop code is.
+6. The last five addresses chosen come back as one-tap rows, always on screen while
+   the panel is open rather than only when the box is empty — so a place checked
+   every morning is one tap from the board, and a search that is unreachable costs
+   nothing. A postal code therefore has to be remembered once, which is the point —
+   it is not printed on the pole the way a stop code is.
 7. The chip in the masthead says which door the board is ranked from — "Near you",
-   or a short form of the address — and opens that same box to change it. It is
-   where the Search button used to be, because what the box changes is which stops
-   the board shows, not just what you are looking for.
+   or a short form of the address — and its caret opens the list of everywhere else
+   it could be: your location, then those recent addresses, then a box for one that
+   is not in the list yet. The row the board is using is marked "Showing now"; the
+   one control that re-runs a location fix sits inside it and says so. It is where
+   the Search button used to be, because what this changes is which stops the board
+   shows, not just what you are looking for.
 
 ## Local run
 

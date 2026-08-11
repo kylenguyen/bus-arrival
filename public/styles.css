@@ -128,9 +128,10 @@ h1 {
   font-size: 0.85rem;
 }
 
+/* Amber, because "not live" is worth a colour. Not bold: this is a mode the page is
+   in for its whole session, and bold at the top of the page read as an error. */
 .tagline.mock {
   color: var(--standing);
-  font-weight: 600;
 }
 
 .visually-hidden {
@@ -291,41 +292,122 @@ dialog#intro.intro-inflow {
   margin: 1rem auto;
 }
 
-/* --- search fallback --- */
+/* --- the destinations card --- */
 
+/* A raised surface, like `.card` and `.results`: choosing where the board is
+   ranked from is a mode, and it used to float on the page background with nothing
+   to say where it began or ended. The border is not decoration — `--shadow` is
+   `none` in dark mode, where it is the only edge the card has (same reasoning as
+   `dialog#intro`). */
 .finder {
   position: relative;
   margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
-/* The other door, above the box rather than below the results: it is a choice
-   between two ways in, not a fallback from a search that failed. A wrapping flex
-   row, so the caption sits beside the button where there is room and under it at
-   320 px — which is why neither media query has anything to say about this. */
-.finder-loc {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-}
-
-.finder-or {
-  margin: 0;
+/* Same treatment as `.results-head`: this is the same kind of label over the same
+   kind of list. */
+.origins-head {
+  margin: 0 0 0.4rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-/* The tick belongs to the pressed state, so switching modes stays one
-   `aria-pressed` assignment in app.js with no second class to keep in step — and
-   the glyph can never contradict what assistive technology is told. */
-#use-location[aria-pressed='true'] {
-  border-color: var(--accent);
+.origins {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-#use-location[aria-pressed='true']::before {
-  /* Non-breaking space: the tick must not end up alone on its own line. */
-  content: '✓\00a0';
+.origins li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* Two lines, the same two a search result gets: the long name leads and the postal
+   code sits under it. A real button, so Enter, Space and the focus ring are the
+   platform's rather than ours. */
+.origin-row {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+}
+
+.origin-row:active {
+  background: var(--surface-2);
+}
+
+.origin-primary {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.origin-detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The marker for the row the board is ranked from, generated from the attribute
+   assistive technology reads — so what a sighted user sees and what a screen reader
+   is told cannot disagree. `aria-current` and not `aria-pressed`: this row is not a
+   toggle, and there is no ✓, because a tick on a row that is also the way to
+   re-rank reads as "done, nothing to do here". */
+.origin-row[aria-current='true'] {
+  /* The left edge replaces the border-radius on that side, so the accent reads as
+     a marker on the list rather than as a selected pill. */
+  border-radius: 0 8px 8px 0;
+  border-left: 3px solid var(--accent);
+  padding-left: calc(0.6rem - 3px);
+  font-weight: 600;
+}
+
+.origin-status {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+/* The one control that re-runs a location fix, inside the row it belongs to and
+   below it rather than beside it: at 320 px there is no beside, and the row's own
+   text is what it would be competing with.
+
+   Only the margin: `button.ghost` already carries the thumb target, the padding and
+   the nowrap, and it outranks a bare class selector — so restating them here would
+   read as setting values that lose. */
+.origin-update {
+  margin: 0.15rem 0 0.35rem 0.6rem;
+}
+
+/* Separates the list from the way to add to it. No "or" label: the heading above
+   the list already says what the list is, which is what the removed paragraph was
+   doing badly — at 320 px it wrapped under the button and read as its caption. */
+.finder-rule {
+  margin: 0.7rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* What the box accepts, stated where it survives the first keystroke. */
+.finder-hint {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 /* Only the clear button is positioned against this; the input fills it. */
@@ -391,14 +473,13 @@ input[type='search']::-webkit-search-cancel-button {
   text-transform: uppercase;
 }
 
+/* No border, no shadow and no background of its own: it sits inside `.finder`,
+   which now carries all three, and a raised list inside a raised card is one edge
+   too many. The row dividers below are what still reads it as a list. */
 .results {
   list-style: none;
   margin: 0.5rem 0 0;
-  padding: 0.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  padding: 0;
   max-height: min(22rem, 55vh);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;

@@ -55,6 +55,41 @@ const VALID = [
   { postal: '321010', building: '', block: '10', road: "ST. GEORGE'S ROAD", lat: 1.32355, lon: 103.86107 },
   // Road only: no building and no block.
   { postal: '188064', building: '', block: '', road: 'VICTORIA STREET', lat: 1.29684, lon: 103.85253 },
+  // The tenant inside the landmark, at the landmark's own coordinates: the pair
+  // that made `toa payoh hub` answer with a bank branch.
+  {
+    postal: '310481',
+    building: 'CITIBANK TOA PAYOH HUB',
+    block: '480',
+    road: 'LORONG 6 TOA PAYOH',
+    lat: 1.33224,
+    lon: 103.84757,
+  },
+  // A brand the user can name in its own right, to catch the lead penalty
+  // misfiring on the record it is supposed to find.
+  {
+    postal: '310482',
+    building: 'NTUC FAIRPRICE TOA PAYOH',
+    block: '470',
+    road: 'LORONG 6 TOA PAYOH',
+    lat: 1.33231,
+    lon: 103.84765,
+  },
+  // The abbreviation cases. Roads are stored in full and LTA's stop descriptions
+  // write "Ave", so these are the rows a rider types the short form of.
+  { postal: '738343', building: '', block: '501', road: 'WOODLANDS AVENUE 5', lat: 1.43812, lon: 103.79014 },
+  { postal: '560308', building: '', block: '308', road: 'ANG MO KIO AVENUE 3', lat: 1.36954, lon: 103.84688 },
+  { postal: '208787', building: '', block: '', road: 'JALAN BESAR', lat: 1.30924, lon: 103.85712 },
+  // The decoy that made `ang mo kio ave 3` return one wrong row: its block `339`
+  // is what the trailing `3` prefix-matched.
+  {
+    postal: '569933',
+    building: 'OCBC ANG MO KIO AVE 1 - 7 ELEVEN',
+    block: '339',
+    road: 'ANG MO KIO AVENUE 1',
+    lat: 1.36211,
+    lon: 103.85399,
+  },
 ];
 
 const INVALID = [
@@ -147,8 +182,13 @@ describe('PlaceIndex.search', () => {
     assert.deepEqual(index.search('999999'), []);
   });
 
+  // Relative positions rather than a fixed slice: the ladder is the claim, and a
+  // fixture that grows a new matching row should not have to rewrite it.
   it('ranks an exact building name above a prefix above a mere containment', () => {
-    assert.deepEqual(postals(index.search('toa payoh')).slice(0, 3), ['319123', '310480', '319762']);
+    const rows = postals(index.search('toa payoh'));
+    assert.equal(rows[0], '319123');
+    assert.ok(rows.indexOf('319123') < rows.indexOf('310480'));
+    assert.ok(rows.indexOf('310480') < rows.indexOf('319762'));
   });
 
   it('ranks a building match above a road match for the same query', () => {
@@ -162,7 +202,9 @@ describe('PlaceIndex.search', () => {
   });
 
   it('matches every token in any order', () => {
-    assert.deepEqual(postals(index.search('hub payoh')), ['310480']);
+    // Both rows are the same building — the landmark and a tenant inside it — and
+    // the landmark leads, which is the ranking fix rather than the conjunction.
+    assert.deepEqual(postals(index.search('hub payoh')), ['310480', '310481']);
     // AND, not OR: "hub" alone would have hit, so this pins the conjunction.
     assert.deepEqual(index.search('hub sengkang'), []);
   });
@@ -248,5 +290,112 @@ describe('PlaceIndex.search', () => {
         assert.ok(row.lat !== 0 || row.lon !== 0, `${query} returned a 0,0 row`);
       }
     }
+  });
+});
+
+// Road-name abbreviations. Every query below is what a rider types after reading
+// a bus stop description off a card in this app, which writes "Ave" because LTA
+// does; the dump stores "AVENUE".
+describe('PlaceIndex.search — abbreviations', () => {
+  it('finds a road by an abbreviation in the middle of the query', () => {
+    assert.deepEqual(postals(index.search('woodlands ave 5')), ['738343']);
+  });
+
+  it('puts the named avenue above the decoy whose block matched the number', () => {
+    const found = postals(index.search('ang mo kio ave 3'));
+    assert.equal(found[0], '560308');
+  });
+
+  // The reason expansion is a variant and not a rewrite: rewriting ST to STREET
+  // would have broken this record to fix the abbreviation above.
+  it('still finds a record whose own name is the abbreviation', () => {
+    assert.deepEqual(postals(index.search('st george')), ['321010']);
+  });
+
+  it('expands lor and jln', () => {
+    assert.deepEqual(postals(index.search('lor 1 toa payoh')), ['310155', '310159']);
+    assert.deepEqual(postals(index.search('jln besar')), ['208787']);
+  });
+
+  // Additive, not a rewrite: the full spelling behaves exactly as it did.
+  it('leaves the written-out query untouched', () => {
+    assert.deepEqual(postals(index.search('woodlands avenue 5')), ['738343']);
+    assert.deepEqual(postals(index.search('victoria street')), ['188064']);
+  });
+
+  it('keeps the last-token-only prefix rule', () => {
+    assert.ok(postals(index.search('toa pay')).length > 0);
+    assert.deepEqual(index.search('pay toa'), []);
+  });
+
+  it('still drops blk, and still refuses a bare block number', () => {
+    assert.deepEqual(postals(index.search('blk 155 lor 1 toa payoh')), ['310155']);
+    assert.deepEqual(index.search('blk'), []);
+    assert.deepEqual(index.search('155'), []);
+  });
+
+  it('truncates an over-long query rather than throwing', () => {
+    assert.doesNotThrow(() => index.search(`ave ${'x'.repeat(200)}`));
+    assert.doesNotThrow(() => index.search('ave '.repeat(40)));
+  });
+
+  // An expansion may only ever raise a row's score, so a row that already matched
+  // as typed cannot be demoted by one that needed expanding.
+  it('never demotes a row that matched as typed', () => {
+    assert.equal(postals(index.search('bayfront avenue'))[0], '018956');
+    assert.equal(postals(index.search('marina bay sands'))[0], '018956');
+  });
+});
+
+// A name led by a word the user did not type ranks below the thing they did type.
+//
+// Measured against the real 121k index, not reasoned about: without these two
+// rules `woodlands ave 5` answers with `HDB-WOODLANDS` and `ang mo kio ave 3` with
+// `KEBUN BARU HEIGHTS`, because a building on the road scores exactly what the road
+// scores and then wins the postal-code tiebreak. That is the payoff — it is what
+// makes the abbreviation fix above return the road the rider named.
+//
+// **What it does not fix:** open issue 2, the tenant-over-landmark case, in
+// production. It orders the fixture pair below correctly, but the real record is
+// `HDB HUB` with `TOA PAYOH` only in its *road*, so no building-based rule can see
+// the words `toa payoh hub` is made of. Verified against the real index: that query
+// is unchanged. Issue 2 stays open, and a fix for it has to reason across building
+// and road together.
+describe('PlaceIndex.search — an unnamed lead ranks lower', () => {
+  it('puts the landmark above the branded tenant that shares its address', () => {
+    const rows = postals(index.search('toa payoh hub'));
+    assert.ok(rows.indexOf('310480') < rows.indexOf('310481'), rows.join(' '));
+  });
+
+  it('puts the named road above a branded building sitting on it', () => {
+    assert.equal(postals(index.search('ang mo kio ave 3'))[0], '560308');
+    assert.equal(postals(index.search('woodlands ave 5'))[0], '738343');
+  });
+
+  // The rule must not misfire on the record it is meant to find: naming the brand
+  // is naming the lead.
+  it('finds a brand the user names outright', () => {
+    assert.equal(postals(index.search('ntuc fairprice'))[0], '310482');
+    assert.equal(postals(index.search('citibank toa payoh'))[0], '310481');
+  });
+
+  // Mid-typing the lead is not yet spelled out, and must not count as unnamed.
+  it('does not tax a lead the last token is still spelling', () => {
+    assert.deepEqual(postals(index.search('citiban')), ['310481']);
+  });
+
+  it('leaves an exact building name at the top', () => {
+    assert.equal(postals(index.search('marina bay sands'))[0], '018956');
+    assert.equal(postals(index.search('toa payoh'))[0], '319123');
+  });
+
+  // Road-only records are exempt: a lorong leads with a road type, not a tenant,
+  // so the block bonus is still what orders two blocks on one road.
+  it('does not tax a road-led record for the way roads are spelled', () => {
+    const rows = postals(index.search('lorong 1 toa payoh'));
+    assert.ok(rows.includes('310155'));
+    assert.ok(rows.includes('310159'));
+    assert.equal(postals(index.search('155 lorong 1 toa payoh'))[0], '310155');
+    assert.equal(postals(index.search('155 lor 1 toa payoh'))[0], '310155');
   });
 });

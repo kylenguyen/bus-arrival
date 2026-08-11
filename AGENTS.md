@@ -243,7 +243,14 @@ before the image build. Everything else, verify by running it:
    one, so clear all four keys (DevTools → Application → Local Storage) to get
    the intro dialog back, and exercise both doors — a returning visitor never
    sees it. Clearing only `origin.v1` leaves a Recent list behind, which is a
-   fifth journey rather than a first one.
+   fifth journey rather than a first one — and now a visible one, since recents are
+   rows in the destinations card rather than contents of the search box.
+
+   The card itself is worth opening in both colour schemes: in dark mode
+   `--shadow` is `none`, so its token border is the only edge it has. Check that
+   opening it from the chip leaves the first board card on screen, that focus lands
+   on the list rather than in the box (a keyboard over the rows defeats the point),
+   and that nothing in it draws a ✓.
 
 Mock mode (no `LTA_ACCOUNT_KEY`) serves 12 synthetic stops with synthetic
 timings — enough to fill the 8-stop board. The finder is **not** in mock mode
@@ -454,11 +461,37 @@ followed by a red build.
   DOM. Split those two statements across an `await` and a fast typist commits the
   wrong address. Rows carry `data-index`; the `data-code` attribute in board-card
   markup is the pin path and is unrelated.
-- `titleCase` in `origin.js` mangles acronyms — `HDB HUB` renders as `Hdb Hub`,
-  `NTUC FAIRPRICE` as `Ntuc Fairprice`. Shipped knowingly: the alternatives are
-  an unbounded exception list or leaving the server's ALL CAPS on the card, which
-  reads as shouting. Do not add a one-off exception; either the list earns its
-  keep as a list or the case stays naive.
+- **The same rule governs the destinations list.** `renderOrigins()` writes
+  `originRows` and the `#origins` markup in one synchronous block, and is called
+  from `openSearch()` and nowhere else — one render site is what keeps the pair
+  impossible to desync. `closeSearch()` clears `originRows` with the markup.
+- **`originsState` owns whether the location row exists at all.** When geolocation
+  cannot work the row is *omitted*, not disabled — a control that cannot keep its
+  promise is worse than no control, and this is where that decision lives now
+  rather than in a DOM removal in `app.js`. Only a literal `true` for
+  `geolocationSupported` counts, so a caller that forgets the flag loses the door
+  visibly instead of shipping a dead one. The flag is
+  `window.isSecureContext && !!navigator.geolocation`: plain http has the property
+  and cannot use it, and a browser exposing it as null passes an
+  `'geolocation' in navigator` test and then refuses the call.
+- **State and action must stay separate objects in that list.** The row the board is
+  ranked from carries `aria-current`; the control that re-runs a location fix is
+  `.origin-update`. Do not merge them back — `aria-pressed` with a ✓ on a button
+  that also fires geolocation is what this replaced, and it made the commonest state
+  read as "already done, nothing to do".
+- `titleCase` in `origin.js` keeps the words in its bounded `ACRONYMS` allowlist
+  capitalised (`HDB HUB` → `HDB Hub`). **Do not replace the list with a
+  heuristic.** The tempting one, "short and no vowels", was tried: `ST`, `BLK`,
+  `JLN`, `RD`, `DR`, `PL`, `CL`, `TG` and `KG` all qualify and all are read as
+  words, so it renders `ST. GEORGE'S ROAD` as `ST. George's Road`. Adding a word to
+  the list is fine; both failure modes are asserted in `src/origin.test.ts`.
+- **Query abbreviations expand as variants, never as rewrites** (`EXPANSIONS` in
+  `src/places.ts`). `AVE` matches `AVENUE` *or* `AVE`, which is what keeps
+  `st george` finding `ST. GEORGE'S ROAD` while `woodlands ave 5` finds
+  `WOODLANDS AVENUE 5`. Candidate generation unions a token's forms
+  (`#postingsFor`) — without that the short literal `AVE` posting list wins the
+  most-selective-token contest and excludes every `AVENUE` row, so fixing
+  `matchesAll` alone still returns nothing.
 - iOS Safari spends a click's transient activation on the first `await`, and
   `getCurrentPosition` called after that point never prompts — silently, and only
   on iPhone. That is why `getPosition()`'s call sits inside a synchronously

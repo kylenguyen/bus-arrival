@@ -119,32 +119,54 @@ State the rule once so no call site invents its own: `label` wherever something 
 
 ### D6 — The six finder states
 
-`finderState({value, results, status, recents})` → `{state, query, shouldSearch, rows, heading, note, busy, expanded, showClear}`.
+`finderState({value, results, status})` → `{state, query, shouldSearch, rows, heading, note, busy, expanded, showClear}`.
 
 | Value | Status | State | Rows | Note |
 |---|---|---|---|---|
-| empty | any | `idle` | recents | — |
-| 1 char | any | `short` | recents | `Keep typing — 2 letters, or a 6-digit postal code.` |
+| empty | any | `idle` | — | — |
+| 1 char | any | `short` | — | `Keep typing — 2 letters, or a 6-digit postal code.` |
 | ≥ 2 | searching | `searching` | **previous rows, kept** | — (`busy: true`) |
 | ≥ 2 | ok, hits | `results` | results | — |
 | ≥ 2 | ok, none | `empty` | — | `No address matched.` |
-| ≥ 2 | offline | `offline` | recents | `Search is unavailable right now.` |
+| ≥ 2 | offline | `offline` | — | `Search is unavailable right now.` |
 
-Rows arrive pre-converted (each carries a ready `Place`), so `app.js` commits with `choosePlace(searchRows[i].place)` — no branch, no second lookup, and unrankable rows are filtered out before render rather than refused on tap. Keeping previous rows during `searching` stops the list emptying and refilling on every keystroke. Recents in the `offline` state is the nicest property here: with the network down, the addresses you use most are still one tap away and cost zero requests.
+Rows arrive pre-converted (each carries a ready `Place`), so `app.js` commits with `choosePlace(searchRows[i].place)` — no branch, no second lookup, and unrankable rows are filtered out before render rather than refused on tap. Keeping previous rows during `searching` stops the list emptying and refilling on every keystroke.
+
+**`recents` is no longer an input, and three states no longer borrow rows from it.** The Recent list used to fill `idle`, `short` and `offline`, which is why `#results` announced itself as "Search results" over it — open issue 4, now closed by construction. Recents live in `originsState` (D6a), above the box and on screen in *every* state, which is strictly better than the property this table used to boast about: the addresses you use most are one tap away with the network down *and* with it up.
+
+### D6a — The destinations list
+
+`originsState({origin, recents, geolocationSupported})` → `{heading, rows}`, each row `{kind, place, primary, detail, status, current, showUpdate}`.
+
+| Row | When | `current` | `detail` | `status` | `showUpdate` |
+|---|---|---|---|---|---|
+| `gps` | `geolocationSupported === true` | origin is gps | `Uses your device location`, or `''` when current | `Showing now` when current | only when current |
+| `place` | one per recent, capped at `RECENT_MAX` | it is the origin | `Singapore {postal}` → `Stop {code}` → `''` | `Showing now` when current | never |
+
+This is what replaced the two `.ghost` buttons in which state and action were the same control — a ✓ generated from `aria-pressed` on a button that still fired geolocation, so the common case read as "already done, nothing to do". `current` marks; `showUpdate` acts; there is no ✓ anywhere.
+
+Rules worth naming: the gps row is **omitted** when geolocation cannot work rather than disabled (the rule `app.js` used to apply by removing a DOM node), and only a literal `true` counts, so a caller that forgets the flag loses the primary door loudly instead of shipping a dead one quietly. The current place origin is hoisted to the front of the place rows whether or not `recents` holds it, and deduplicated against them by `recentKey` — the *same* identity function `rememberRecent` uses, so the two lists cannot disagree about what counts as the same address. Rows mirror `renderRows`' two lines, so the destinations and the search results read as one list split by a rule.
 
 ### D7 — Copy table
 
 | Site | New |
 |---|---|
-| `taglineFor` | `Stops near {name}, live from LTA` |
+| `taglineFor(origin, mock)` | `Stops near {name}, live from LTA` / `Stops near {name} · demo timings, not live` |
 | `gateMessageFor` / `noStopsMessage` | `Finding stops near {label}…` / `No bus stops found near {label}.` — short label; these sit centred over skeleton cards |
 | `chipState.label` / `.ariaLabel` | `{label} ▾` / `Change stops shown. Currently: stops near {name}, Singapore {postal}` |
 | `dismissGate`, `busy()` hatch, `onLocationRefused`, `#intro-code` | `Enter an address` (one shared constant) |
 | `#intro-code-sub` | `A postal code, building or road` |
-| `.finder-or` | `or search for an address` |
-| `#search` placeholder / `<label>` | `e.g. 310155 or Toa Payoh Hub` / `Search for an address or postal code` |
+| `#origins-head` | `Show stops near` |
+| gps row / its `detail` | `Near you` / `Uses your device location` |
+| `CURRENT_STATUS` / `.origin-update` | `Showing now` / `↻ Update my location` |
+| `#search` placeholder / `<label>` | `Search postal code or place` / `Search for an address or postal code` |
+| `#finder-hint` | `Postal code, building or road name` |
 | `COMMIT_HINT` | `Enter a 6-digit postal code, or at least two letters.` |
 | unfound postal / unfound stop | `No address at 310155.` / `No stop with code 43179.` |
+
+The tagline is one sentence with two clauses, composed in the pure function. It used to be two competing sentences with a guard in `app.js` picking between them, and the demo notice both won and latched — so `Demo data — no LTA API key configured yet` replaced the only line saying where the board was ranked from, permanently, and said it in the vocabulary of whoever deploys the thing rather than whoever is waiting at the stop.
+
+What the box accepts now lives in `#finder-hint` rather than in the placeholder alone: a placeholder is gone by the first keystroke, which is exactly when a rider typing an abbreviated road name needs to know what the box understands.
 
 ### D8 — Invariants that must survive every task
 
@@ -152,6 +174,7 @@ Rows arrive pre-converted (each carries a ready `Place`), so `app.js` commits wi
 - **`origin.js` purity.** No DOM, no `fetch`, no `localStorage`, no clock. Enforced by the tripwire at [src/origin.test.ts:31-45](src/origin.test.ts#L31-L45). Anything time-dependent takes `now` as a parameter.
 - **Nothing moves from `origin.js` into `app.js`.** The pure layer only grows; moving logic into glue silently deletes its test coverage.
 - **`escape()` before `innerHTML`** for every interpolation of server data. Address strings come from a scraped dump — untrusted.
+- **Rows and the array they index are written in one synchronous block.** True of `searchRows`/`#results` in `applyFinder`, and of `originRows`/`#origins` in `renderOrigins`. Rows commit by `data-index`, so an index read off the DOM must always address the array that produced that DOM; split the two statements across an `await` and a fast typist commits the wrong address. `renderOrigins` is called from `openSearch` and nowhere else, which is what keeps that pair impossible to desync.
 - **`localStorage`** reads go through `readRaw`, writes through `write()`.
 - **`shellSignature` does not encode origin mode**; all three explicit resets stay ([app.js:990](public/app.js#L990), [:1109](public/app.js#L1109), [:355](public/app.js#L355)).
 - `npm run build` passes clean under `strict` + `noUncheckedIndexedAccess`; no `any`, no `!`.
@@ -297,6 +320,8 @@ Static imports are fine here — unlike `stops.test.ts`, `places.ts` reads no `p
 
 Fixture contents: Marina Bay Sands (building + block + road); two blocks on `LORONG 1 TOA PAYOH` (155 and 159, no building); `TOA PAYOH HDB HUB`; a bare `TOA PAYOH`; `ST. GEORGE'S ROAD` (punctuation); a road-only record; and five deliberately invalid records.
 
+Added with the abbreviation and ranking work: `WOODLANDS AVENUE 5`, `ANG MO KIO AVENUE 3` and `JALAN BESAR` (the roads a rider types the short form of); `OCBC ANG MO KIO AVE 1 - 7 ELEVEN` with block `339` (the decoy whose block prefix-matched a trailing `3`); `CITIBANK TOA PAYOH HUB` at the Hub's own coordinates (the tenant-over-landmark pair); and `NTUC FAIRPRICE TOA PAYOH` (a brand that must still be findable by name, so the `UNNAMED_LEAD` penalty cannot misfire unnoticed).
+
 | Block | Cases |
 |---|---|
 | `loadBuffer` | seeds `size` and `generatedAt` from the envelope · rejects countably: non-6-digit postal, non-finite coordinate, `0,0`, outside the SG box, duplicate postal — assert final `size` and `get()` → `null` for each · throws on valid gzip whose `places` is not an array, leaving `size` at 0 |
@@ -343,7 +368,7 @@ Add:
 
 | Function | Signature → returns | Notes |
 |---|---|---|
-| `titleCase(s)` | `(string) → string` | ALL CAPS → display case. Lives here, pure and tested, which is why the server ships caps. **Known weakness:** naive title case mangles acronyms (`NTUC FAIRPRICE` → `Ntuc Fairprice`). Ship it, look at it on a real phone in Task 5, and only then decide whether an exception list earns its keep |
+| `titleCase(s)` | `(string) → string` | ALL CAPS → display case, word by word. Lives here, pure and tested, which is why the server ships caps. Words in the bounded `ACRONYMS` allowlist keep their capitals (`HDB HUB` → `HDB Hub`); there is deliberately no vowel-based heuristic behind it — see open issue 3 |
 | `placeFromRow(row)` | `(ServerRow) → Place \| null` | The **single** server-row → origin mapping. `null` for `!isUsableCoord` or a row with nothing to name it. Collapses whitespace, title-cases, caps `label` at 18 and `name` at 40 per D5 |
 | `readRecents(raw)` | `(string\|null) → Place[]` | `JSON.parse` in a `try`; array only; every entry through the same normaliser as `readOriginRecord`; sliced to 5. Corrupt ⇒ `[]` |
 | `rememberRecent(list, place)` | `(Place[], Place\|null) → Place[]` | New array, `place` first, deduped by `postal` when present else by `lat,lon`, capped at 5. Pure, no clock — order is positional, so no `at` and no `now` parameter |
@@ -799,44 +824,84 @@ Task 6 and deliberately left out of it. Items 6 and 7 are **release
 preconditions** — they do not block review, but the change must not ship with
 either outstanding.
 
-1. **Road-name abbreviations — the highest-value follow-up by some distance.**
-   Roads are stored in full (`ANG MO KIO AVENUE 3`) and only the last query token
-   may prefix-match, so `woodlands ave 5` returns **zero** rows and
-   `ang mo kio ave 3` returns one wrong row (`OCBC ANG MO KIO AVE 1 - 7 ELEVEN`,
-   whose block `339` is what the trailing `3` prefix-matched). Verified against
-   the running server: `curl 'localhost:8080/api/places?q=woodlands%20ave%205'`
-   → `{"places":[]}`. This is not academic — **LTA's own stop descriptions write
-   "Ave"**, so a card reading `Woodlands Ave 5` names something the finder cannot
-   find. The fix is a synonym table (`AVE→AVENUE`, `RD`, `ST`, `LOR`, `JLN`,
-   `CTRL`) with OR-matching per token, which is a real change to candidate
-   generation and to `matchesAll`, and was not smuggled into Task 6.
+1. **Road-name abbreviations — CLOSED.** Roads are stored in full
+   (`ANG MO KIO AVENUE 3`) and only the last query token may prefix-match, so
+   `woodlands ave 5` returned **zero** rows and `ang mo kio ave 3` returned one
+   wrong row (`OCBC ANG MO KIO AVE 1 - 7 ELEVEN`, whose block `339` is what the
+   trailing `3` prefix-matched). This was never academic — **LTA's own stop
+   descriptions write "Ave"**, so a card reading `Woodlands Ave 5` named something
+   the finder could not find.
 
-2. **Bank branches outrank the landmark they sit in.** `toa payoh hub` puts
-   `CITIBANK TOA PAYOH HUB` first: it scores 60 for *containing* the query, while
-   `HDB HUB` — the building everyone means — reaches only the 20 floor because it
-   matches no single field. The coordinates of both are the same building, so the
-   board is right and only the label is odd. Fixing it means the ladder knows
-   something about record types, which is a bigger change than the symptom.
+   Fixed with `EXPANSIONS` in `src/places.ts`: a query-side synonym table,
+   OR-matched per token and never a rewrite, so `st george` still finds
+   `ST. GEORGE'S ROAD`. Three touch points, all of them necessary — `matchesAll`
+   accepts any form of a token; `#postingsFor` unions a token's forms during
+   candidate generation, without which the short literal `AVE` posting list was
+   chosen as the most selective token and excluded every `AVENUE` row (fixing
+   `matchesAll` alone still returned nothing); and `scoreOf` ladders both spellings
+   and takes the higher, without which an expanded match sits on the 20 floor.
 
-3. **`titleCase` mangles acronyms:** `HDB HUB` → `Hdb Hub`, `NTUC FAIRPRICE` →
-   `Ntuc Fairprice`. Risk 6 above called for a decision with eyes on a real
-   phone. Shipped as-is: the alternatives are an unbounded exception list or ALL
-   CAPS on the card.
+   Verified against the running server:
+   `curl 'localhost:8080/api/places?q=woodlands%20ave%205'` now answers with
+   `WOODLANDS AVENUE 5` first.
 
-4. **`#results` keeps `aria-label="Search results"` while it is showing Recent.**
-   The visible heading above it says `Recent`, and the heading correctly sits
-   outside the listbox, so a sighted user is not misled; a screen-reader user
-   hears the wrong label for that one state.
+2. **Bank branches outrank the landmark they sit in — STILL OPEN.** `toa payoh hub`
+   puts `CITIBANK TOA PAYOH HUB` first: it scores 60 for *containing* the query,
+   while `HDB HUB` — the building everyone means — reaches only the 20 floor
+   because it matches no single field. The coordinates of both are the same
+   building, so the board is right and only the label is odd.
 
-5. **Two verifications were not run, for want of hardware.** The VoiceOver pass
-   over `aria-activedescendant` (iOS support for it is historically weak, and no
-   test here can catch it) and the real-iPhone check that the location button
-   still prompts — D8's transient-activation invariant. Desktop Chrome is green
-   and the code paths are unchanged, but neither is evidence.
+   One fix was built and measured against the real 121k index: the `IN_ORDER` rung
+   plus the `UNNAMED_LEAD` penalty now in `scoreOf`. **Those two rules were kept,
+   but they do not fix this issue** — they were kept because they fix a different
+   and more common thing, which is item 1's ranking (see below). This query is
+   unchanged by them, because the real record is `HDB HUB` with `TOA PAYOH` only in
+   its *road*, so no building-based rule can see the words the query is made of.
+   `jurong point` has the same shape: `DBS JURONG POINT BRANCH` leads because no
+   record is named `JURONG POINT`. A fix has to reason across building and road
+   together. `src/places.test.ts` pins the current behaviour so the next attempt
+   knows what it is changing.
 
-6. **`data/sg-places.json.gz` is untracked in git as of this note.** It exists
-   locally and the app serves from it, but `COPY data ./data` will fail in CI
-   until it is committed, and `/healthz` gates readiness on the place count.
-   Committing it is a release precondition, not a follow-up.
+   What those two rules *did* fix, measured before and after: without them
+   `woodlands ave 5` answers with `HDB-WOODLANDS` and `ang mo kio ave 3` with
+   `KEBUN BARU HEIGHTS`, because a building sitting on the road scores exactly what
+   the road scores and then wins the postal-code tiebreak. A name led by a word the
+   user did not type now ranks below the road they did type.
+
+3. **`titleCase` mangles acronyms — CLOSED.** `HDB HUB` → `Hdb Hub`,
+   `NTUC FAIRPRICE` → `Ntuc Fairprice`. Risk 6 above called for a decision with
+   eyes on a real phone; the decision is the bounded `ACRONYMS` allowlist in
+   `public/origin.js`, applied per word.
+
+   The tempting heuristic — "short and no vowels" — was built and rejected on the
+   data: `ST`, `BLK`, `JLN`, `RD`, `DR`, `PL`, `CL`, `TG` and `KG` all qualify for
+   it and all are read as words, so it renders `ST. GEORGE'S ROAD` as
+   `ST. George's Road`. The list is bounded, which was its stated cost; the
+   heuristic is unbounded in the damage it does. Both cases are now assertions.
+
+4. **`#results` keeps `aria-label="Search results"` while it is showing Recent —
+   CLOSED.** Recent left the listbox entirely: it is a row in `#origins` now
+   (D6a), so `#results` holds search results in every state and the label is true
+   without being changed. `finderState` no longer takes `recents` at all, and a
+   regression test asserts that passing it makes no difference.
+
+5. **Two verifications still not run, for want of hardware — STILL OPEN.** The
+   VoiceOver pass over `aria-activedescendant` (iOS support for it is historically
+   weak, and no test here can catch it) and the real-iPhone check that the location
+   door still prompts — D8's transient-activation invariant.
+
+   The destinations-card work re-exercised both and could not close either. What it
+   did add is evidence one step short of hardware: real Chrome, driven over CDP at
+   375 px, with `getCurrentPosition` stubbed to count its calls. The intro's
+   location door, the `gps` row and `.origin-update` each reach it exactly once per
+   tap, with nothing awaited above the call. That proves the code path, not the
+   iPhone behaviour — the failure mode is Safari-only and silent, so it stays open.
+
+   VoiceOver is unchanged in the listbox and *new* in the destinations list, where
+   `aria-current` now carries the state a ✓ and `aria-pressed` used to. Worth
+   listening to specifically.
+
+6. **`data/sg-places.json.gz` — CLOSED.** It is tracked, so `COPY data ./data` and
+   the `/healthz` place-count gate both hold in CI.
 
 7. **The OneMap footer line**, per item 12 above.

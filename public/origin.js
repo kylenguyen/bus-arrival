@@ -260,25 +260,45 @@ export function shouldRelocateOnFocus(origin, lastLoc, now) {
 // --- copy ---------------------------------------------------------------
 
 /**
- * The masthead tagline. Never returns the mock-mode warning: that claim ("demo
- * data") contradicts this one ("live from LTA"), and the two must not race. The
- * guard lives in `app.js`, which knows whether mock mode is on, and this function
- * stays a pure function of the origin so the guard cannot be forgotten quietly.
+ * The masthead tagline: where the board is ranked from, and where its timings come
+ * from. Both clauses, always — which is the change.
+ *
+ * The two claims must not race: "demo data" contradicts "live from LTA". That used
+ * to be a guard in `app.js`, which overwrote this sentence with the mock warning
+ * and latched so it could never be overwritten back — so the demo notice
+ * permanently destroyed the only line saying where the board was. Taking `mock` as
+ * an input makes the contradiction impossible by construction instead: there is
+ * one sentence, it is composed here, and no caller can produce half of it.
+ *
+ * `mock` is read for truthiness rather than compared to `true`. The lenient
+ * reading is the safe one here — an omitted argument keeps the wording every
+ * existing caller already gets, and the failure it risks is claiming demo data
+ * when there is none, which is visible on the first load rather than a silent
+ * false claim of live data.
  *
  * @param {object | null} origin
+ * @param {unknown} [mock] whether the board's timings are synthetic
  * @returns {string}
  */
-export function taglineFor(origin) {
+export function taglineFor(origin, mock) {
   // The long name, not the label: the tagline has a line to itself, so this is
   // one of the two places with room to say where the board actually is.
-  if (origin?.mode === 'place') return `Stops near ${origin.name}, live from LTA`;
-  if (origin?.mode === 'gps') return 'Stops nearest you, live from LTA';
-  // No door taken yet — behind the intro, and on the dismissal gate. "Stops
-  // nearest you" over a page with no board describes something that is not on
-  // screen, in a mode nothing has been granted for: the same claim `chipState`
-  // already refuses to make. Still ends in the provenance, which is true either
-  // way and is the one thing worth saying before a door is chosen.
-  return 'Any stop in Singapore, live from LTA';
+  const where =
+    origin?.mode === 'place'
+      ? `Stops near ${origin.name}`
+      : origin?.mode === 'gps'
+        ? 'Stops nearest you'
+        : // No door taken yet — behind the intro, and on the dismissal gate. "Stops
+          // nearest you" over a page with no board describes something that is not
+          // on screen, in a mode nothing has been granted for: the same claim
+          // `chipState` already refuses to make.
+          'Any stop in Singapore';
+
+  // The provenance, which is the one thing worth saying before a door is chosen
+  // and is true either way. It stops naming LTA in mock mode because in mock mode
+  // none of it came from LTA; the wording is what a rider needs to know about the
+  // numbers, not what a deploy needs to know about its configuration.
+  return mock ? `${where} · demo timings, not live` : `${where}, live from LTA`;
 }
 
 /**
@@ -666,31 +686,71 @@ function cap(text, max) {
 }
 
 /**
+ * Words that are said as letters, not read as words, and so keep their capitals.
+ * Alphabetised; add to it in order.
+ *
+ * **An allowlist is the whole rule — there is no heuristic behind it.** The
+ * obvious one, "short and no vowels", is wrong on the data: `ST`, `BLK`, `JLN`,
+ * `RD`, `DR`, `PL`, `CL`, `TG` and `KG` all qualify and all are ordinary
+ * abbreviations a rider reads as words, so it would render `ST. GEORGE'S ROAD` as
+ * `ST. George's Road` and `BLK 155` as `BLK 155`. The list is bounded, which the
+ * plan for this function called its cost; the heuristic is unbounded in the
+ * damage it does, which is worse.
+ */
+const ACRONYMS = new Set([
+  'CPF',
+  'DBS',
+  'HDB',
+  'ITE',
+  'JTC',
+  'LRT',
+  'MRT',
+  'MSCP',
+  'NTU',
+  'NTUC',
+  'NUS',
+  'OCBC',
+  'POSB',
+  'PSA',
+  'SBS',
+  'SIT',
+  'SMRT',
+  'SMU',
+  'SUTD',
+  'UOB',
+  'URA',
+]);
+
+/**
  * ALL CAPS from the dump into something a card can show.
  *
  * The casing conversion lives here, pure and tested, which is exactly why the
  * server ships uppercase: normalising 121k records on disk would cost megabytes
  * to save a client-side `replace`.
  *
- * A letter is capitalised when it starts the string or follows something that is
- * neither a letter nor an apostrophe. The apostrophe exception is what keeps
- * `ST. GEORGE'S ROAD` from becoming `St. George'S Road`, which a plain `\b` test
- * produces.
+ * Run by run, where a run is letters, digits and apostrophes — **not** word by
+ * word.** The difference is `HDB-WOODLANDS`, which is one space-delimited word and
+ * two names: splitting on spaces alone rendered it `Hdb-Woodlands`, because
+ * `HDBWOODLANDS` matches nothing. It is all over the real index, and it is the case
+ * a fixture of tidy building names does not contain.
  *
- * **Known weakness:** acronyms come out wrong — `NTUC FAIRPRICE` becomes
- * `Ntuc Fairprice`. The alternatives are an unbounded exception list or shipping
- * the shouting, so this ships as-is and gets looked at on a real phone before
- * anyone spends a list on it.
+ * The apostrophe is inside the run on purpose. Excluded, `GEORGE'S` becomes two
+ * runs and the second capitalises to `George'S` — the exact defect the previous
+ * implementation's `[^a-z']` class existed to avoid.
+ *
+ * A matching run is upper-cased rather than returned untouched, so a lower-case
+ * `hdb` from a future data source comes out as `HDB`. Membership is tested on the
+ * letters and digits alone, so punctuation cannot hide a match — and `ST.` still
+ * fails it, because `ST` is not on the list.
  *
  * @param {unknown} value
  * @returns {string}
  */
 export function titleCase(value) {
-  const text = collapseSpace(value).toLowerCase();
-  return text.replace(
-    /(^|[^a-z'])([a-z])/g,
-    (_match, before, letter) => before + letter.toUpperCase(),
-  );
+  return collapseSpace(value).replace(/[a-z0-9']+/gi, (run) => {
+    if (ACRONYMS.has(run.replace(/[^a-z0-9]/gi, '').toUpperCase())) return run.toUpperCase();
+    return run.charAt(0).toUpperCase() + run.slice(1).toLowerCase();
+  });
 }
 
 /**
@@ -839,16 +899,28 @@ export function rememberRecent(list, place) {
 }
 
 /**
- * What counts as the same address. Postal when there is one — two rows sharing a
- * postal code are the same building — and the coordinate otherwise, which is the
- * only identity a stop row or a road-only row has. Prefixed so a postal can never
- * collide with a coordinate string.
+ * What counts as the same address, for `rememberRecent` and for `originsState`
+ * alike. Postal when there is one — two rows sharing a postal code are the same
+ * building — then the stop code, and the coordinate otherwise, which is the only
+ * identity a road-only row has. Each prefixed so a postal can never collide with
+ * a code or with a coordinate string.
+ *
+ * **One function, deliberately.** Two identity rules would let the Recent list
+ * keep two entries that the destinations list collapses into one, and the row a
+ * user tapped would then be a different address from the one stored under that
+ * position.
+ *
+ * The `code` rung is why a hand-edited record cannot show the same stop twice
+ * under two coordinates; before it, identity for a stop row was its coordinate,
+ * which is the one field a stop row shares with the road it sits on.
  *
  * @param {Place} place
  * @returns {string}
  */
 function recentKey(place) {
-  return place.postal ? `p:${place.postal}` : `c:${place.lat},${place.lon}`;
+  if (place.postal) return `p:${place.postal}`;
+  if (place.code) return `s:${place.code}`;
+  return `c:${place.lat},${place.lon}`;
 }
 
 // --- the finder panel ---------------------------------------------------
@@ -860,9 +932,6 @@ function recentKey(place) {
  * in the glue.
  */
 export const SEARCH_DEBOUNCE_MS = 250;
-
-/** The heading over the Recent rows. Sits outside the listbox: a heading is not an option. */
-const RECENT_HEADING = 'Recent';
 
 /** What the panel says when there is one character in the box. */
 const SHORT_NOTE = 'Keep typing — 2 letters, or a 6-digit postal code.';
@@ -905,6 +974,104 @@ export function moveActive(index, delta, count) {
   return (((start + step) % total) + total) % total;
 }
 
+/** The heading over the destinations list. */
+const ORIGINS_HEADING = 'Show stops near';
+
+/**
+ * What the gps row says about itself when the board is *not* already ranked from
+ * it. Once it is, the row has nothing left to explain and says `CURRENT_STATUS`
+ * instead — a control that describes what it would do, while also being the thing
+ * already done, is the confusion this list exists to remove.
+ */
+const GPS_DETAIL = 'Uses your device location';
+
+/** What marks the row the board is ranked from, wherever that row appears. */
+const CURRENT_STATUS = 'Showing now';
+
+/**
+ * The destinations list: everywhere the board could be ranked from, and which one
+ * it already is.
+ *
+ * This replaces a pair of `.ghost` buttons in which state and action were the same
+ * control — a ✓ generated from `aria-pressed` on a button that still fired
+ * geolocation, so the common state read as "already done, nothing to do". Here the
+ * two are separate objects: `current` marks the row the board is using, and
+ * `showUpdate` asks for the one affordance that re-runs a location fix.
+ *
+ * `showUpdate` is true **only** on a gps row that is already current. In place
+ * mode the gps row itself is the action, so a second control beside it would be
+ * two buttons for one job.
+ *
+ * An unsupported `geolocationSupported` **omits the row** rather than disabling
+ * it, which is the rule `app.js` already applied by removing the DOM node: a
+ * control that cannot work is worse than no control, because it still looks like
+ * the way in. Only a literal `true` counts — a caller that forgets the flag loses
+ * the primary door, which is loud in one manual pass, where the lenient reading
+ * would silently ship a dead button to exactly the devices that cannot use it.
+ *
+ * The current place origin is hoisted to the front of the place rows whether or
+ * not `recents` holds it. In practice `rememberPlace` has already put it first;
+ * hoisting rather than trusting that is what keeps the list from ever failing to
+ * contain the address the board is actually showing.
+ *
+ * Rows mirror `renderRows`' two lines — the long `name` leads, the postal code
+ * goes underneath — so the destinations and the search results read as one list
+ * split by a rule, not as two different widgets.
+ *
+ * @param {{origin?: object | null, recents?: Place[] | null,
+ *   geolocationSupported?: unknown}} input
+ * @returns {{heading: string, rows: Array<{kind: 'gps' | 'place', place: Place | null,
+ *   primary: string, detail: string, status: string, current: boolean,
+ *   showUpdate: boolean}>}}
+ */
+export function originsState({ origin, recents, geolocationSupported }) {
+  const onGps = origin?.mode === 'gps';
+  /** @type {Array<{kind: 'gps' | 'place', place: Place | null, primary: string,
+   *   detail: string, status: string, current: boolean, showUpdate: boolean}>} */
+  const rows = [];
+
+  if (geolocationSupported === true) {
+    rows.push({
+      kind: 'gps',
+      place: null,
+      primary: 'Near you',
+      detail: onGps ? '' : GPS_DETAIL,
+      status: onGps ? CURRENT_STATUS : '',
+      current: onGps,
+      showUpdate: onGps,
+    });
+  }
+
+  // A stored place with an unusable coordinate is dropped even when it is the
+  // current origin: the board cannot be ranked from it either, so offering it as
+  // the row that is "showing now" would name a state that does not exist.
+  const currentPlace =
+    origin?.mode === 'place' && isUsableCoord(origin.lat, origin.lon) ? origin : null;
+  const currentKey = currentPlace ? recentKey(currentPlace) : null;
+
+  const places = currentPlace ? [currentPlace] : [];
+  for (const place of Array.isArray(recents) ? recents : []) {
+    if (!place || !isUsableCoord(place.lat, place.lon)) continue;
+    if (currentKey !== null && recentKey(place) === currentKey) continue;
+    places.push(place);
+  }
+
+  for (const place of places.slice(0, RECENT_MAX)) {
+    const isCurrent = place === currentPlace;
+    rows.push({
+      kind: 'place',
+      place,
+      primary: place.name,
+      detail: place.postal ? `Singapore ${place.postal}` : place.code ? `Stop ${place.code}` : '',
+      status: isCurrent ? CURRENT_STATUS : '',
+      current: isCurrent,
+      showUpdate: false,
+    });
+  }
+
+  return { heading: ORIGINS_HEADING, rows };
+}
+
 /**
  * The whole finder panel, decided in one place: six states, and every attribute
  * the apply site sets, so `app.js` is a run of one-line assignments with no
@@ -916,44 +1083,48 @@ export function moveActive(index, delta, count) {
  * refused on tap: a row that cannot become an origin should never have been on
  * screen.
  *
- * Two behaviours worth naming. During `searching` the previous rows stay put, so
- * the list does not empty and refill on every keystroke. And `offline` shows
- * Recent: with the network down, the addresses used most are still one tap away
- * and cost no request at all.
+ * **Search results and nothing else.** This used to fill `idle`, `short` and
+ * `offline` with the Recent list, which is why `#results` carried the wrong
+ * accessible name in those three states. Recent now lives above the box in
+ * `originsState`, permanently rather than only when there is nothing to show, so
+ * the addresses used most are one tap away in *every* state — including the
+ * offline one this function used to special-case for exactly that reason.
+ *
+ * One behaviour worth naming: during `searching` the previous rows stay put, so
+ * the list does not empty and refill on every keystroke.
  *
  * `query` comes back normalised, including the `S310155` → `310155` strip, so the
  * caller sends the digits the server can resolve rather than the prefix a
  * Singaporean naturally types.
  *
  * @param {{value?: unknown, results?: Array<{place?: Place | null}> | null,
- *   status?: 'idle' | 'searching' | 'ok' | 'offline', recents?: Place[] | null}} input
+ *   status?: 'idle' | 'searching' | 'ok' | 'offline'}} input
  * @returns {{state: 'idle' | 'short' | 'searching' | 'results' | 'empty' | 'offline',
  *   query: string, shouldSearch: boolean, rows: Array<{place: Place}>,
  *   heading: string, note: string, busy: boolean, expanded: boolean,
  *   showClear: boolean}}
  */
-export function finderState({ value, results, status, recents }) {
+export function finderState({ value, results, status }) {
   const typed = collapseSpace(value);
   // The strip happens here rather than at commit time, or the server never sees
   // the digits at all — it is the request that has to carry them.
   const postalMatch = /^s\s*(\d{6})$/i.exec(typed);
   const query = postalMatch ? postalMatch[1] : typed;
 
-  const recentRows = (Array.isArray(recents) ? recents : [])
-    .filter((place) => place && isUsableCoord(place.lat, place.lon))
-    .map((place) => ({ place }));
   const resultRows = (Array.isArray(results) ? results : []).filter(
     (row) => row?.place && isUsableCoord(row.place.lat, row.place.lon),
   );
 
   const base = { query, shouldSearch: query.length >= 2, showClear: typed.length > 0 };
 
-  if (query.length === 0) return panel(base, 'idle', recentRows, RECENT_HEADING, '');
-  if (query.length < 2) return panel(base, 'short', recentRows, RECENT_HEADING, SHORT_NOTE);
+  // No rows in these three: an empty box has nothing to have matched, and a
+  // failed request has nothing to report but that it failed. `panel` derives the
+  // empty heading and the collapsed `expanded` from the empty row list, so the
+  // listbox cannot claim to hold options it does not have.
+  if (query.length === 0) return panel(base, 'idle', [], '', '');
+  if (query.length < 2) return panel(base, 'short', [], '', SHORT_NOTE);
 
-  if (status === 'offline') {
-    return panel(base, 'offline', recentRows, RECENT_HEADING, OFFLINE_NOTE);
-  }
+  if (status === 'offline') return panel(base, 'offline', [], '', OFFLINE_NOTE);
   if (status === 'ok') {
     return resultRows.length > 0
       ? panel(base, 'results', resultRows, '', '')
@@ -981,8 +1152,8 @@ function panel(base, state, rows, heading, note, busy) {
     ...base,
     state,
     rows,
-    // An empty list gets no heading: "Recent" over nothing describes a list that
-    // is not there.
+    // An empty list gets no heading, whatever the caller passed: a heading over
+    // nothing describes a list that is not there.
     heading: rows.length > 0 ? heading : '',
     note,
     busy: busy === true,

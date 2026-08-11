@@ -35,6 +35,7 @@ import {
   moveActive,
   noStopsMessage,
   originCoord,
+  originsState,
   placeFromRow,
   readOriginRecord,
   readRecents,
@@ -88,7 +89,7 @@ const SKELETON_CARDS = 3;
 const el = {
   originChip: document.getElementById('origin-chip'),
   finder: document.getElementById('finder'),
-  useLocation: document.getElementById('use-location'),
+  origins: document.getElementById('origins'),
   search: document.getElementById('search'),
   finderClear: document.getElementById('finder-clear'),
   resultsHead: document.getElementById('results-head'),
@@ -127,13 +128,22 @@ let recents = readRecents(readRaw(RECENT_KEY));
  */
 let searchResults = [];
 /**
- * What is actually on screen in `#results` — results, or the Recent list, or
- * neither. **Written in the same synchronous block as the markup** (see
- * `applyFinder`), which is the whole reason a `data-index` read off the DOM can
- * be trusted to address this array and not the one before it.
+ * What is actually on screen in `#results` — search results, or nothing. Recent
+ * used to be in here too, which is why the listbox announced the wrong name in
+ * three of its six states; it lives in `#origins` now.
+ *
+ * **Written in the same synchronous block as the markup** (see `applyFinder`),
+ * which is the whole reason a `data-index` read off the DOM can be trusted to
+ * address this array and not the one before it.
  * @type {Array<{place: object}>}
  */
 let searchRows = [];
+/**
+ * What is on screen in `#origins`. Same invariant as `searchRows` and the same
+ * reason — see `renderOrigins`, which is the only writer.
+ * @type {Array<{kind: string, place: object | null}>}
+ */
+let originRows = [];
 /** The highlighted row, or -1 for none. Arrow keys move it; `moveActive` decides. */
 let activeIndex = -1;
 /**
@@ -146,8 +156,15 @@ let searchStatus = 'idle';
 let shellSignature = '';
 let loadingBoard = false;
 let pendingLoad;
-/** Set once the server admits the timings are synthetic; never unset. */
-let mockActive = false;
+/**
+ * Whether the server has admitted the timings are synthetic. Plain state, read by
+ * `applyTagline` on every origin change — not a latch. It used to be one, because
+ * the demo notice *replaced* the tagline and had to defend itself against the next
+ * origin switch; the cost was that the sentence saying where the board is ranked
+ * from never came back for the rest of the session. `taglineFor` composes both
+ * clauses now, so there is nothing to defend.
+ */
+let mock = false;
 /**
  * The intro has been put on screen this session. Nothing is persisted about it —
  * the dialog's job is done the moment a door is chosen, and a door being chosen
@@ -276,12 +293,16 @@ function note(message) {
 }
 
 /**
- * Mock mode's warning outranks the tagline: "Stops near Toa Payoh, live from LTA"
- * over synthetic timings is a false claim about live data, in exactly the
- * environment used for manual testing.
+ * The tagline: where the board is ranked from, and where its timings come from.
+ * `taglineFor` composes both, so there is no longer a guard here choosing between
+ * two contradictory sentences — and no way for one of them to win permanently.
+ *
+ * The class stays, because "not live" is worth a colour; it is no longer a
+ * different sentence.
  */
 function applyTagline() {
-  if (!mockActive) el.tagline.textContent = taglineFor(origin);
+  el.tagline.textContent = taglineFor(origin, mock);
+  el.tagline.classList.toggle('mock', mock);
 }
 
 /**
@@ -701,12 +722,17 @@ async function refreshArrivals() {
   }
 }
 
+/**
+ * The board's timings are synthetic, recorded and shown. One flag and one re-render:
+ * the wording is `taglineFor`'s to decide, and it keeps the origin clause, so this
+ * no longer has to overwrite anything or latch to stay overwritten.
+ *
+ * Still one-way — nothing sets it back — but that is now a property of the server,
+ * whose credentials cannot change mid-session, rather than a defence.
+ */
 function flagMock() {
-  // First, not last: from here on the tagline belongs to this warning, so no
-  // later origin switch can quietly replace it with "live from LTA".
-  mockActive = true;
-  el.tagline.textContent = 'Demo data — no LTA API key configured yet';
-  el.tagline.classList.add('mock');
+  mock = true;
+  applyTagline();
 }
 
 // --- location -----------------------------------------------------------
@@ -842,9 +868,57 @@ let inFlight = null;
 /** Request ordering: only the newest sequence number may write a result. */
 let searchSeq = 0;
 
-/** Ticks the location button when gps is the mode the board is already using. */
-function applyModePressed() {
-  el.useLocation.setAttribute('aria-pressed', String(origin?.mode === 'gps'));
+/**
+ * The destinations list, applied. `originsState` decides every row and every
+ * string; this writes them.
+ *
+ * **`originRows` and the markup are written together, here, and nowhere else** —
+ * the same invariant `applyFinder` rests on, for the same reason. Rows commit by
+ * `data-index`, so an index read off the DOM must always address the array that
+ * produced that DOM.
+ *
+ * Both interpolated fields are escaped: `primary` is an address out of a scraped
+ * dump, by way of `localStorage`, where a user can hand-edit it.
+ *
+ * Neither half of the geolocation test is belt-and-braces. A page served over plain
+ * http has `navigator.geolocation` and cannot use it, which is the case
+ * `introVariant` already distinguishes. And the check is `!!navigator.geolocation`
+ * rather than `'geolocation' in navigator`, matching the guard in `getPosition`:
+ * a browser that exposes the property as null passes the `in` test and then refuses
+ * the call, which would put a row here that cannot do the one thing it offers.
+ *
+ * Called from `openSearch` and nowhere else, deliberately: the list is only ever on
+ * screen while the card is open, and `openSearch` is the only thing that opens it.
+ * One render site is what keeps `originRows` and the markup impossible to desync.
+ */
+function renderOrigins() {
+  const panel = originsState({
+    origin,
+    recents,
+    geolocationSupported: window.isSecureContext && !!navigator.geolocation,
+  });
+
+  originRows = panel.rows;
+  el.origins.innerHTML = panel.rows
+    .map((row, index) => {
+      const detail = row.detail ? `<span class="origin-detail">${escape(row.detail)}</span>` : '';
+      const status = row.status ? `<span class="origin-status">${escape(row.status)}</span>` : '';
+      // The update control is a second button inside the row's `<li>`, not inside
+      // the row's own button: a button cannot contain a button.
+      const update = row.showUpdate
+        ? `<button type="button" class="ghost origin-update" data-update="1">↻ Update my location</button>`
+        : '';
+      return `
+        <li>
+          <button type="button" class="origin-row" data-kind="${row.kind}" data-index="${index}"
+                  ${row.current ? 'aria-current="true"' : ''}>
+            <span class="origin-primary">${escape(row.primary)}</span>
+            ${detail}${status}
+          </button>
+          ${update}
+        </li>`;
+    })
+    .join('');
 }
 
 /**
@@ -882,7 +956,6 @@ function applyFinder() {
     value: el.search.value,
     results: searchResults,
     status: searchStatus,
-    recents,
   });
 
   searchRows = panel.rows;
@@ -964,24 +1037,37 @@ function rememberPlace(place) {
 }
 
 /**
- * Opens the panel and puts the Recent list on screen with it — that is what an
- * empty box now shows instead of nothing.
+ * Opens the card, with the destinations list on screen: the location door and every
+ * address already used, one tap each.
+ *
+ * `focus` is `'list'` or `'search'`, and the difference matters on a phone. Opening
+ * from the chip focuses the list, because focusing the input raises the keyboard
+ * over the very rows the user came to tap. Coming through the address door — the
+ * intro, the gate, the wait hatch — the user has already said they mean to type, so
+ * that path asks for the input.
+ *
+ * `scrollIntoView` with `nearest`, so a card already on screen does not jump: the
+ * card is in normal flow above the board, and on a short viewport opening it can
+ * otherwise leave it below the fold.
  *
  * **Synchronous, and it must stay that way.** `startWithCode` calls this from a
- * click, and an `await` anywhere on that path spends the transient activation
- * iOS Safari needs for the location button one panel up.
+ * click, and an `await` anywhere on that path spends the transient activation iOS
+ * Safari needs for the location row inside it. `scrollIntoView` returns nothing;
+ * keep it that way — a smooth-scroll promise here would cost the prompt.
  */
-function openSearch() {
+function openSearch(focus = 'search') {
   el.finder.hidden = false;
   el.originChip.setAttribute('aria-expanded', 'true');
-  applyModePressed();
+  renderOrigins();
   applyFinder();
-  el.search.focus();
+  if (focus === 'list') el.origins.querySelector('.origin-row')?.focus();
+  else el.search.focus();
+  el.finder.scrollIntoView({ block: 'nearest' });
 }
 
 function closeSearch() {
   // Whether focus has to be put somewhere: the button that closed the panel may
-  // have been inside it (`#use-location`, a result), and hiding the focused
+  // have been inside it (a destination row, a result), and hiding the focused
   // element drops focus to the body. Called with the panel already shut — the
   // gate's retry does that — this leaves focus wherever it is.
   const wasOpen = !el.finder.hidden;
@@ -996,7 +1082,6 @@ function closeSearch() {
 
   el.finder.hidden = true;
   el.originChip.setAttribute('aria-expanded', 'false');
-  applyModePressed();
 
   // Collapsed by hand rather than through `applyFinder`: the box may still hold
   // text at this point (`switchOrigin` clears it afterwards), and rendering the
@@ -1004,6 +1089,9 @@ function closeSearch() {
   // that is now hidden.
   searchResults = [];
   searchRows = [];
+  // Cleared with the rows it addresses: a `data-index` left in a hidden panel must
+  // not survive to be read against the next list.
+  originRows = [];
   searchStatus = 'idle';
   activeIndex = -1;
   el.results.hidden = true;
@@ -1335,13 +1423,37 @@ el.intro.addEventListener('close', () => {
 });
 
 el.originChip.addEventListener('click', () => {
-  if (el.finder.hidden) openSearch();
+  // The list, not the box: the chip's caret promises a menu, and the rows are what
+  // it opens onto. A phone keyboard over them would hide the promise being kept.
+  if (el.finder.hidden) openSearch('list');
   else closeSearch();
 });
 
-// The finder's other door. Same path as the intro's button, so the no-`await`
-// rule above `getPosition` covers this click too.
-el.useLocation.addEventListener('click', () => void startWithLocation());
+// The destinations list. Delegated and by index, the same contract `#results` uses:
+// `renderOrigins` writes `originRows` and this markup in one synchronous block.
+//
+// **Nothing above `startWithLocation()` may await.** This is a click path to
+// `getPosition`, so the transient-activation rule documented on `startWithLocation`
+// governs this handler — no `await`, no dynamic `import()`, no promise before the
+// call. The update button is checked first because it sits inside the row's `<li>`
+// and would otherwise fall through to the row itself.
+el.origins.addEventListener('click', (event) => {
+  if (event.target.closest('[data-update]')) {
+    void startWithLocation();
+    return;
+  }
+
+  const button = event.target.closest('[data-index]');
+  if (!button) return;
+  const row = originRows[Number(button.dataset.index)];
+  if (!row) return;
+
+  if (row.kind === 'gps') {
+    void startWithLocation();
+    return;
+  }
+  choosePlace(row.place);
+});
 
 el.search.addEventListener('input', () => {
   clearTimeout(debounce);

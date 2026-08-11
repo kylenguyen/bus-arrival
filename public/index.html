@@ -42,17 +42,32 @@
     </header>
 
     <main>
-      <!-- Both doors, in one place. This is no longer only a search box: what it
-           changes is which stops the board shows, which is why the location
-           button lives here rather than in a second panel — `startWithCode()`
-           opens this, so the other door is already on screen. -->
+      <!-- Everywhere the board can be ranked from, as a list of destinations.
+           The chip's caret promises a menu, so this is one: the location door and
+           the addresses already used are rows in the same list, and the search box
+           is the way to add one that is not in it yet.
+
+           The pair of `.ghost` buttons this replaces made state and action the same
+           control — a ✓ generated from `aria-pressed` on a button that still fired
+           geolocation, so the common case read as "already done". Here the row the
+           board is using carries `aria-current` and the one affordance that re-runs
+           a fix is a separate control inside it. -->
       <section class="finder" id="finder" aria-label="Change the stops shown" hidden>
-        <div class="finder-loc">
-          <button id="use-location" type="button" class="ghost" aria-pressed="false">
-            Use my current location
-          </button>
-          <p class="finder-or">or search for an address</p>
-        </div>
+        <p class="origins-head" id="origins-head">Show stops near</p>
+        <!-- Rows are `<li><button>` and not `role="radio"`: the platform gives
+             focus order, Enter and Space for free, where a radiogroup would need a
+             roving `tabindex` maintained by hand. `renderOrigins()` overwrites the
+             row below on open; it is here so the common state is in the markup
+             rather than looking like a placeholder. -->
+        <ul class="origins" id="origins" aria-labelledby="origins-head">
+          <li>
+            <button type="button" class="origin-row" data-kind="gps" data-index="0">
+              <span class="origin-primary">Near you</span>
+              <span class="origin-detail">Uses your device location</span>
+            </button>
+          </li>
+        </ul>
+        <hr class="finder-rule" />
         <label class="visually-hidden" for="search">Search for an address or postal code</label>
         <!-- The × is functional, not chrome: clearing a mistyped 6-digit postal
              code on a phone otherwise means long-press, select all, delete. It is
@@ -60,11 +75,14 @@
 
              There is deliberately no magnifier icon beside it. Built and measured:
              at 320 px it left the field 202.8 px of text and the placeholder needs
-             215.6 px, so "…Toa Payoh Hub" clipped to "…Toa Payoh H" — a truncated
-             example is worse than no icon at all, on a control whose panel already
-             says "or search for an address" and whose keyboard already shows a
-             search key. Without it the placeholder fits at every width down to
-             320 px with 13.6 px to spare. -->
+             215.6 px, so a truncated example is worse than no icon at all — on a
+             control that sits under a heading naming what the list is for and whose
+             keyboard already shows a search key.
+
+             What the field accepts is stated in `#finder-hint` below rather than in
+             the placeholder alone. A placeholder is gone by the first keystroke,
+             which is exactly when a rider typing an abbreviated road name needs to
+             know what the box understands. -->
         <div class="finder-field">
           <input
             id="search"
@@ -72,13 +90,14 @@
             role="combobox"
             aria-expanded="false"
             aria-controls="results"
+            aria-describedby="finder-hint"
             aria-autocomplete="list"
             aria-activedescendant=""
             inputmode="search"
             enterkeyhint="search"
             autocomplete="off"
             spellcheck="false"
-            placeholder="e.g. 310155 or Toa Payoh Hub"
+            placeholder="Search postal code or place"
           />
           <button
             id="finder-clear"
@@ -90,6 +109,7 @@
             ×
           </button>
         </div>
+        <p class="finder-hint" id="finder-hint">Postal code, building or road name</p>
         <p id="results-head" class="results-head" hidden></p>
         <ul id="results" class="results" role="listbox" aria-label="Search results" hidden></ul>
         <p id="finder-note" class="note" hidden></p>
@@ -106,7 +126,18 @@
         </div>
       </section>
 
-      <section id="board" class="board" aria-live="polite" aria-label="Nearby bus stops"></section>
+      <!-- Described by the tagline, which is where "demo timings, not live" is
+           said. The tagline itself is deliberately not a live region: it changes on
+           every origin switch, and announcing that each time is chatter. As a
+           description it is read on arrival at the board instead, which is when it
+           is worth knowing. -->
+      <section
+        id="board"
+        class="board"
+        aria-live="polite"
+        aria-label="Nearby bus stops"
+        aria-describedby="tagline"
+      ></section>
     </main>
 
     <footer class="footer">
