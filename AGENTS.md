@@ -2,6 +2,24 @@
 
 Guidance for coding agents working in this repository. Read this before making changes.
 
+## The one thing that matters
+
+**A commuter must find out what bus is coming, and when, as quickly and with as
+little effort as possible — on a phone, one-handed, at a bus stop, on cellular
+data.** That is the whole product. Every feature, every layout, every interaction
+is judged against it and nothing else.
+
+Two rules follow, and they decide arguments:
+
+1. **Speed and convenience beat capability.** A change that adds a capability but
+   costs a tap, a round trip, a scroll, or a moment of reading is a regression,
+   however useful the capability is. When in doubt, the answer is no. Ask "does
+   this get someone to a departure time faster?" — if the honest answer is no,
+   do not build it.
+2. **Mobile is the product, not a viewport.** Design, build and verify at phone
+   width first. Wide screens are the override, never the base. A layout that only
+   reads well on a laptop is broken, not "desktop-optimised".
+
 ## What this is
 
 A single-page bus arrival board for Singapore. A commuter opens the page, picks
@@ -48,7 +66,19 @@ convenience for capability, the default answer is no. Concretely:
   answers, asked once and never again. Adding a way to change a preference is
   configuration; asking which of two journeys this is, is not.
 - Mobile phone at a bus stop on cellular data is the target device. Wide screens
-  are the override, not the base.
+  are the override, not the base. In practice:
+  - The answer — stop name, service number, minutes — must be legible at arm's
+    length in sunlight and reachable without pinch-zoom or horizontal scroll.
+  - Anything tappable is a thumb target, comfortably hit one-handed, with enough
+    separation that a hurried tap cannot hit the wrong thing. Hover is not an
+    interaction; there is no cursor.
+  - The most-wanted information sits highest. Chrome, notes and secondary detail
+    go below the fold or away entirely — the first screenful is the product.
+  - Payload and round trips are a UX concern on cellular, not just an
+    engineering one. Weigh every added asset and request against the delay it
+    puts between opening the page and reading a time.
+  - Verify at ~375 px wide before calling a frontend change done. A change that
+    was only ever seen on a desktop browser has not been tested.
 
 ## Stack
 
@@ -131,7 +161,10 @@ before the image build. Everything else, verify by running it:
 3. Exercise the endpoint you touched, e.g.
    `curl -s 'localhost:8080/api/board?lat=1.3521&lon=103.8198&limit=3'`.
 4. For frontend changes, open `http://localhost:8080` and check the board in a
-   narrow viewport. Geolocation needs a secure context — `localhost` counts, a
+   phone-width viewport first (device toolbar, ~375 px) — that is the shipping
+   target, so a change checked only at desktop width is unverified. Confirm the
+   first screenful still leads with arrivals, nothing scrolls sideways, and every
+   control is a comfortable one-handed tap. Geolocation needs a secure context — `localhost` counts, a
    bare LAN IP does not. The first visit is a different journey from every later
    one, so clear the three keys (DevTools → Application → Local Storage) to get
    the intro dialog back, and exercise both doors — a returning visitor never
