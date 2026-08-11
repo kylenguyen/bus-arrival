@@ -25,6 +25,7 @@ import {
   commitDecision,
   decideBoot,
   delistedNote,
+  dismissGate,
   distanceLabel,
   gateMessageFor,
   gateState,
@@ -52,6 +53,16 @@ const TICK_MS = 10_000; // local re-render so minutes count down between fetches
 const LOC_MAX_AGE_MS = 12 * 60 * 60 * 1000; // cached coordinate still worth a first paint
 const MOVED_M = 200; // re-rank the board once the live fix differs by this much
 const SEARCH_DEBOUNCE_MS = 250;
+/**
+ * How long a wait for a position runs before the gate also offers the other door.
+ * `getPosition` gives up at 12 s and an unanswered permission prompt calls nothing
+ * back at all, so without this the only thing on screen for that whole time is a
+ * sentence. Long enough that a fix that is about to arrive is not interrupted by a
+ * button appearing under it.
+ */
+const WAIT_HATCH_MS = 3_000;
+/** Enough to fill a phone's first screenful, so the wait has the board's shape. */
+const SKELETON_CARDS = 3;
 
 const el = {
   originChip: document.getElementById('origin-chip'),
@@ -240,6 +251,15 @@ function renderChip() {
  * does the wrong thing the moment something unhides it.
  */
 function gate(message, primary, secondary) {
+  // Every gate state change cancels the pending escape hatch: it exists to add a
+  // button to *this* wait, and a wait that has already been answered — by a board,
+  // a refusal or a switch — must not have one appear under it afterwards.
+  clearHatch();
+  // And drops the skeletons, for the same reason: a refusal or a failure is the end
+  // of the wait, so cards still pulsing underneath it promise a board that is not
+  // coming. `busy()` puts them back straight after calling this, which is why the
+  // order there is gate-then-skeleton and not the other way round.
+  clearSkeleton();
   const state = gateState(message, primary, secondary);
   el.gate.hidden = false;
   el.gateMsg.textContent = state.message;
@@ -251,10 +271,97 @@ function gate(message, primary, secondary) {
   el.gateAlt.onclick = secondary?.onClick ?? null;
 }
 
+/**
+ * The skeletons are not cleared here. The only caller is `loadBoard` on a board it
+ * is about to `render()`, and `renderShells` replaces the whole board's markup —
+ * clearing first would mean two writes to paint one board.
+ */
 function hideGate() {
+  clearHatch();
   el.gate.hidden = true;
   el.gateAction.onclick = null;
   el.gateAlt.onclick = null;
+}
+
+/** The pending escape hatch, or null. See `WAIT_HATCH_MS`. */
+let hatchTimer = null;
+
+function clearHatch() {
+  clearTimeout(hatchTimer);
+  hatchTimer = null;
+}
+
+/**
+ * A wait, with the shape of the answer on screen instead of an empty page: the
+ * gate's sentence over skeleton cards. Every "…" gate goes through this — a first
+ * visit's location request, a returning visit's first load, an origin switch — which
+ * is the whole of the fix for a page that used to be one grey line and a footer
+ * stranded in the middle of it.
+ *
+ * `offerCode` is for waits that are on a position rather than on the network, and
+ * only those: a wait for `/api/board` fails on its own and raises a retry, whereas
+ * a permission prompt nobody answers never calls back, so the way out has to be
+ * offered on a timer.
+ */
+function busy(message, { offerCode = false } = {}) {
+  gate(message); // clears any previous hatch, so arm after it, never before
+  showSkeleton();
+  if (offerCode) {
+    hatchTimer = setTimeout(() => {
+      hatchTimer = null;
+      // Same sentence, one more way out. The board is not checked here: anything
+      // that painted one has already been through `gate()` or `hideGate()`, and
+      // both cancel this.
+      gate(message, { label: 'Enter a stop code', onClick: startWithCode });
+      showSkeleton();
+    }, WAIT_HATCH_MS);
+  }
+}
+
+/**
+ * Placeholder cards, so a wait reads as an answer arriving rather than as an empty
+ * app. `aria-hidden` because `#board` is a live region and three empty cards are
+ * not an announcement; `data-code` is deliberately absent, which is what keeps the
+ * ten-second `paintBodies()` tick from matching them.
+ */
+const SKELETON_CARD = `
+  <article class="card skeleton" aria-hidden="true">
+    <div class="card-head">
+      <div class="card-title">
+        <span class="sk sk-name"></span>
+        <span class="sk sk-sub"></span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+      <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+      <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+    </div>
+  </article>`;
+
+/**
+ * The guard is on the *markup*, not on the `board` array. Cards on screen are worth
+ * more than skeletons whatever their age — a refusal over a working board must not
+ * blank it — while `switchOrigin` and `startWithLocation` clear the markup and leave
+ * the array in place on purpose, and those are exactly the waits that need filling.
+ *
+ * `shellSignature` goes back to `''` for the same reason `resetBoard()` does it:
+ * `renderShells` short-circuits on a matching signature, and skeletons in the DOM
+ * under a signature that still matches the incoming board would never be replaced.
+ */
+function showSkeleton() {
+  if (el.board.children.length > 0) return;
+  el.board.innerHTML = SKELETON_CARD.repeat(SKELETON_CARDS);
+  shellSignature = '';
+}
+
+/**
+ * Takes placeholders off screen, and only placeholders — the test is for a skeleton
+ * in the DOM rather than for an empty `board` array, because a real board and a
+ * blanked-but-remembered one both leave that array full.
+ */
+function clearSkeleton() {
+  if (el.board.querySelector('.skeleton')) resetBoard();
 }
 
 // --- rendering ----------------------------------------------------------
@@ -272,17 +379,27 @@ const LOAD_TITLE = {
 };
 
 /**
- * One arrival: minutes stacked over that bus's own crowding label. Every bus
- * carries its own load, so a full bus now and an empty one in nine minutes is
- * visible at a glance on a phone.
+ * One arrival: minutes, and on the next bus its crowding as well.
+ *
+ * The crowding label is the lead column's alone. Three of them per service meant
+ * nine on a card, all at the same weight, so the one number a commuter is actually
+ * deciding on — the next bus — competed with eight others for the same glance; and
+ * how full a bus will be in twenty minutes is a guess dressed as data anyway. The
+ * width that frees goes to the lead number, which is the thing being read at arm's
+ * length. Columns two and three are for "is it worth waiting", which minutes answer
+ * on their own.
+ *
+ * The empty lead cell keeps its reserved label height so a service with no crowding
+ * data does not sit a line taller than its neighbours.
  */
 function renderEta(bus, index) {
+  const lead = index === 0;
   const classes = ['eta'];
-  if (index === 0) classes.push('eta-lead');
+  if (lead) classes.push('eta-lead');
 
   if (!bus || !bus.estimatedArrival) {
     return `<div class="${classes.join(' ')} eta-empty">
-      <span class="eta-value">–</span><span class="eta-load"></span>
+      <span class="eta-value">–</span>${lead ? '<span class="eta-load"></span>' : ''}
     </div>`;
   }
 
@@ -293,16 +410,16 @@ function renderEta(bus, index) {
   const value =
     mins <= 0
       ? '<span class="eta-value">Arr</span>'
-      : `<span class="eta-value">${mins}${
-          index === 0 ? '<span class="eta-unit">min</span>' : ''
-        }</span>`;
+      : `<span class="eta-value">${mins}${lead ? '<span class="eta-unit">min</span>' : ''}</span>`;
 
-  const label = bus.load && LOAD_LABEL[bus.load] ? LOAD_LABEL[bus.load] : '';
+  const label = lead && bus.load && LOAD_LABEL[bus.load] ? LOAD_LABEL[bus.load] : '';
   const load = label
     ? `<span class="eta-load load-${escape(bus.load.toLowerCase())}" title="${escape(
         LOAD_TITLE[bus.load],
       )}">${escape(label)}</span>`
-    : '<span class="eta-load"></span>';
+    : lead
+      ? '<span class="eta-load"></span>'
+      : '';
 
   const title = bus.monitored ? '' : ' title="Scheduled timing — bus not currently tracked"';
   return `<div class="${classes.join(' ')}"${title}>${value}${load}</div>`;
@@ -315,8 +432,12 @@ function renderTags(bus) {
   if (bus.type === 'DD') tags.push('<span class="tag" title="Double deck">DD</span>');
   if (bus.type === 'BD') tags.push('<span class="tag" title="Bendy bus">Bendy</span>');
   if (bus.wheelchairAccessible) {
+    // U+267F followed by U+FE0E, the text-presentation selector: as an emoji this is
+    // a saturated blue tile that out-contrasts the service number next to it, which
+    // is not what should win the glance. A platform is free to ignore the selector
+    // and render the emoji anyway, so it is a preference rather than a guarantee.
     tags.push(
-      '<span class="tag tag-icon" title="Wheelchair accessible" aria-label="Wheelchair accessible">♿</span>',
+      '<span class="tag tag-icon" title="Wheelchair accessible" aria-label="Wheelchair accessible">♿︎</span>',
     );
   }
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';
@@ -625,7 +746,10 @@ async function locate(force = false) {
 
   const fresh = lastLoc && Date.now() - lastLoc.at < LOC_MAX_AGE_MS;
 
-  if (board.length === 0) gate(gateMessageFor(origin));
+  // The hatch is armed here as well as on the first visit: a returning visitor who
+  // revoked the permission, or one whose fix has gone stale on a phone that will not
+  // give another, waits on the same silence.
+  if (board.length === 0) busy(gateMessageFor(origin), { offerCode: true });
 
   // Paint from the last known coordinate first — a returning visitor sees the
   // board immediately rather than watching a spinner wait on the GPS.
@@ -865,7 +989,9 @@ async function switchOrigin(next) {
   writeOrigin(next);
   resetBoard();
   boardNote('');
-  gate(gateMessageFor(origin));
+  // No hatch: this wait is on `/api/board`, which answers or fails and raises its
+  // own retry, and the door being offered is the one the user just came through.
+  busy(gateMessageFor(origin));
 
   const loaded = await loadBoard(originCoord(origin, lastLoc));
   if (loaded !== false) return;
@@ -889,6 +1015,25 @@ const INTRO_NO_GPS = {
 };
 
 /**
+ * The two doors, by name, so `dismissGate` can nominate one without this file
+ * mapping a label back to a handler. The location door goes through
+ * `startWithLocation` rather than `locate` for the transient-activation reason
+ * documented there — every door the user can tap does.
+ */
+const DOOR = {
+  gps: () => void startWithLocation(),
+  code: () => startWithCode(),
+};
+
+/**
+ * Which introduction was rendered, kept because the dismissal gate needs it after
+ * the dialog has closed: with no location button in the dialog there is no location
+ * door on the gate either. `showIntro` is the only writer, and a dismissal cannot
+ * happen before it runs.
+ */
+let introVariantUsed = 'full';
+
+/**
  * The first-visit chooser. Two doors and a sentence about what the site is,
  * because a native permission prompt cannot explain either.
  *
@@ -906,6 +1051,7 @@ function showIntro() {
     isSecureContext: window.isSecureContext,
     hasGeolocation: 'geolocation' in navigator,
   });
+  introVariantUsed = variant;
 
   if (variant !== 'full') {
     el.introGps.remove();
@@ -933,9 +1079,10 @@ function showIntro() {
  * **Nothing may be `await`ed above the `getPosition()` call.** iOS Safari spends
  * the click's transient activation on the first `await`, and `getCurrentPosition`
  * after that point never prompts — silently, and only on iPhone. `intro.close()`
- * and `gate()` are synchronous DOM calls for exactly that reason, and this is why
- * the retry does not go through `locate()`, which awaits a permissions query
- * first. See the comment on `getPosition`.
+ * and `busy()` are synchronous DOM calls for exactly that reason — a `setTimeout`
+ * inside `busy` schedules work but awaits nothing, so the hatch does not cost the
+ * activation either — and this is why the retry does not go through `locate()`,
+ * which awaits a permissions query first. See the comment on `getPosition`.
  */
 async function startWithLocation() {
   introDoorTaken = true;
@@ -944,7 +1091,9 @@ async function startWithLocation() {
   // open would stack a search box above the gate and then above the new board.
   // A no-op when the panel is already shut, and synchronous either way.
   closeSearch();
-  gate(gateMessageFor(origin));
+  // The longest wait in the product: up to 12 s, and an unanswered prompt never
+  // returns at all. Skeletons for the shape of it, and the other door on a timer.
+  busy(gateMessageFor(origin), { offerCode: true });
 
   try {
     const coords = await getPosition();
@@ -958,6 +1107,9 @@ async function startWithLocation() {
     // after the fix rather than before, so a 12-second wait for a GPS that may
     // never arrive does not blank a board that is still true.
     if (origin?.mode !== 'gps') resetBoard();
+    // Whatever the reset left behind, the load below is still a wait: refill it
+    // rather than leaving the gate's sentence over an empty page for a round trip.
+    showSkeleton();
     // Before `loadBoard`, not after: `boardParams` resolves the request
     // coordinate from `origin`, so loading with `origin` still null would send no
     // coordinate at all and paint an empty board.
@@ -969,9 +1121,10 @@ async function startWithLocation() {
 }
 
 /**
- * The stop-code door, and the dismissal landing. Persists nothing and asks for
- * nothing — there is no coordinate in hand yet, so under the governing rule there
- * is no origin to write, and the dialog is right to come back next reload.
+ * The stop-code door: the dialog's second button, and the same door offered again on
+ * the dismissal gate and on a refusal. Persists nothing and asks for nothing — there
+ * is no coordinate in hand yet, so under the governing rule there is no origin to
+ * write, and the dialog is right to come back next reload.
  */
 function startWithCode() {
   introDoorTaken = true;
@@ -991,12 +1144,20 @@ el.intro.addEventListener('click', (event) => {
   if (event.target === el.intro) el.intro.close();
 });
 
-// Escape, the backdrop and a door all end here. Only a dismissal opens the
-// finder: the user declined to choose, and the searchable list of stops is the
-// one thing that works without deciding anything first.
+// Escape, the backdrop and a door all end here. A dismissal is the interesting
+// one: on a phone the backdrop is most of the screen, so it is usually an accident
+// rather than a decision, and it used to open the search panel and nothing else —
+// a page with a search box, no board, no gate and three quarters of the viewport
+// empty. It lands on the gate instead, which already exists to say why the board
+// is not there and to carry the doors as buttons. `dismissGate` decides both.
 el.intro.addEventListener('close', () => {
   if (introDoorTaken) return;
-  openSearch();
+  const copy = dismissGate(introVariantUsed);
+  gate(
+    copy.message,
+    { label: copy.primary.label, onClick: DOOR[copy.primary.door] },
+    copy.secondary ? { label: copy.secondary.label, onClick: DOOR[copy.secondary.door] } : null,
+  );
 });
 
 el.originChip.addEventListener('click', () => {
@@ -1091,7 +1252,8 @@ function boot() {
   }
 
   if (decision.journey === 'stop') {
-    gate(gateMessageFor(origin));
+    // No hatch: nothing here is waiting on a position, only on `/api/board`.
+    busy(gateMessageFor(origin));
     void loadBoard(originCoord(origin, lastLoc));
     return;
   }

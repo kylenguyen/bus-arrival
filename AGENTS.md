@@ -38,6 +38,14 @@ rather than as a preference. Do not grow it into a settings panel, and do not
 simplify it away — the second door is the whole reason the first one is allowed to
 be refused.
 
+Dismissing it — Escape, or a tap on the backdrop, which on a phone is most of the
+screen and so is usually an accident — lands on the **gate**, carrying one sentence
+about why the board is empty and the same two doors as buttons (`dismissGate` in
+[public/origin.js](public/origin.js) decides both, and drops the location door when
+the variant has none). It used to open the search panel instead, which left a page
+holding a search box, no board, no gate and three quarters of the viewport empty.
+Nothing is persisted, so the dialog is still right to come back next reload.
+
 The product goal is speed and low friction, not features. When a change trades
 convenience for capability, the default answer is no. Concretely:
 
@@ -68,7 +76,19 @@ convenience for capability, the default answer is no. Concretely:
 - Mobile phone at a bus stop on cellular data is the target device. Wide screens
   are the override, not the base. In practice:
   - The answer — stop name, service number, minutes — must be legible at arm's
-    length in sunlight and reachable without pinch-zoom or horizontal scroll.
+    length in sunlight and reachable without pinch-zoom or horizontal scroll. In
+    practice nothing on a card goes below ~11 px (`0.7rem`): the crowding labels,
+    column headings and vehicle tags all used to sit at `0.6rem`, which is
+    decoration rather than information at a bus stop in the sun. Buy the room by
+    dropping content that has not earned it, never by shrinking type past that.
+  - Crowding is shown for the **next** bus only. Three labels a service meant nine
+    on a card at one weight, so the number being decided on competed with eight
+    others; how full a bus will be in twenty minutes is a guess anyway. Columns two
+    and three answer "is it worth waiting", which minutes do alone.
+  - A wait shows the board's shape, not an empty page: `busy()` in
+    [public/app.js](public/app.js) puts the gate's sentence over skeleton cards. A
+    grey line alone in a viewport reads as a broken app, and the first-visit
+    location wait can run 12 s.
   - Anything tappable is a thumb target, comfortably hit one-handed, with enough
     separation that a hurried tap cannot hit the wrong thing. Hover is not an
     interaction; there is no cursor.
@@ -296,6 +316,18 @@ Nothing in the repository references a path `apps/bus-arrival`.
   `await`ed anywhere between a click and that call — the rule belongs to the whole
   chain, not to one function. Desktop Chrome stays green either way and no test
   here can catch it, so a real iPhone is the only check.
+- The gate and the skeletons are one state machine, and the ordering is
+  load-bearing. `gate()` cancels the pending escape hatch **and** clears the
+  skeletons, because a refusal or a failure is the end of a wait and cards still
+  pulsing under it promise a board that is not coming; `busy()` therefore calls
+  `gate()` first and `showSkeleton()` after, never the other way round. The hatch —
+  the "Enter a stop code" button that appears after 3 s — is armed only for waits on
+  a *position*: a wait on `/api/board` fails on its own and raises its own retry,
+  whereas an unanswered permission prompt never calls back at all, so the only way
+  out of that one has to arrive on a timer. `showSkeleton()` tests the board's
+  *markup*, not the `board` array — a real board on screen outranks placeholders,
+  while `switchOrigin` and `startWithLocation` deliberately clear the markup and
+  keep the array.
 - Reading `localStorage` throws as well as writing it — Firefox with
   `dom.storage.enabled = false` throws on the access itself — so every read sits
   inside a `try` (`readRaw`, `readPins`, `readLoc`) and every write goes through

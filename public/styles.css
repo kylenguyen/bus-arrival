@@ -55,9 +55,17 @@ html {
   text-size-adjust: 100%;
 }
 
+/* A column, so the footer can be pushed to the bottom. Every short state — the
+   intro's backdrop, a wait, a refusal, an empty board — used to leave the footer
+   stranded halfway up the viewport, which reads as a broken layout rather than as
+   an app that is working. `100vh` first for iOS below 15.4, which has no `dvh`. */
 body {
   margin: 0;
   padding: 0 var(--pad-right) calc(2.5rem + env(safe-area-inset-bottom)) var(--pad-left);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
@@ -73,6 +81,14 @@ main,
 .footer {
   max-width: 46rem;
   margin: 0 auto;
+  width: 100%;
+}
+
+/* Takes the slack, so the footer below it lands at the bottom of a short page and
+   directly under the board on a long one. `dialog` is out of flow in the UA sheet
+   (absolute, or fixed when modal), so it never becomes a flex item here. */
+main {
+  flex: 1 0 auto;
 }
 
 .masthead {
@@ -151,8 +167,10 @@ button.primary {
 
 /* --- location gate --- */
 
+/* Tighter than it was: during a wait this sentence sits directly above the skeleton
+   cards, and 2.25rem of air between the two read as two unrelated things. */
 .gate {
-  padding: 2.25rem 0.5rem;
+  padding: 1.4rem 0.5rem 1.1rem;
   text-align: center;
 }
 
@@ -392,6 +410,81 @@ input[type='search'] {
   border-color: var(--accent);
 }
 
+/* --- skeleton ---
+   What a wait looks like: the board's shape, at the board's size, so the answer
+   appears to be arriving rather than the page appearing to be empty. Bars only —
+   no spinner, nothing that has to be centred in a viewport, and no second layout
+   to keep in step with the real card. */
+
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.skeleton .card-head {
+  /* No pin button on a placeholder, so the head needs its own height or it
+     collapses to the two bars and the card reads shorter than a real one. */
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+.sk-name {
+  width: 55%;
+  height: 1rem;
+}
+
+.sk-sub {
+  width: 38%;
+  height: 0.7rem;
+  margin-top: 0.4rem;
+}
+
+/* Padding and bar height are set to land near a real service row's height, so the
+   board does not jump much when the timings replace them. */
+.sk-row {
+  display: grid;
+  grid-template-columns: var(--col-service) 1fr;
+  gap: var(--col-gap);
+  align-items: center;
+  padding: 0.95rem 0.8rem;
+}
+
+.sk-row + .sk-row {
+  border-top: 1px solid var(--border);
+}
+
+.sk-no {
+  width: 2.2rem;
+  height: 1.35rem;
+}
+
+.sk-eta {
+  width: 3.5rem;
+  height: 1.35rem;
+  margin-left: auto;
+}
+
+.skeleton {
+  animation: sk-pulse 1.3s ease-in-out infinite alternate;
+}
+
+@keyframes sk-pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 .card-head {
   display: flex;
   align-items: flex-start;
@@ -438,11 +531,11 @@ input[type='search'] {
 /* Walking distance is the thing you act on, so it gets a chip of its own
    rather than trailing off the end of a run-on line. */
 .meta-dist {
-  padding: 0.02rem 0.4rem;
+  padding: 0.05rem 0.4rem;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -472,22 +565,27 @@ input[type='search'] {
 
 /* --- arrivals table ---
    Four columns shared by the heading row and every service row: the service
-   number, then the next three buses. */
+   number, then the next three buses. The first bus is the widest because it is the
+   one being decided on: it carries a unit and a crowding label the other two no
+   longer do (see `renderEta`). */
 
 .services-head,
 .service {
   display: grid;
-  grid-template-columns: var(--col-service) 1.25fr 1fr 1fr;
+  grid-template-columns: var(--col-service) 1.4fr 1fr 1fr;
   gap: var(--col-gap);
   padding: 0.5rem 0.8rem;
 }
 
+/* Nothing on this card is allowed below ~11 px: the target is a phone held at arm's
+   length in Singapore sunlight, where the old 0.6rem (9.6 px) labels were decoration
+   rather than information. Every small size here is at or above that floor. */
 .services-head {
   padding-bottom: 0.3rem;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -532,13 +630,13 @@ input[type='search'] {
 }
 
 .tag {
-  padding: 0 0.22rem;
+  padding: 0 0.24rem;
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--muted);
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.45;
   letter-spacing: 0.02em;
 }
 
@@ -547,7 +645,15 @@ input[type='search'] {
 .tag-icon {
   padding: 0;
   border: 0;
-  font-size: 0.7rem;
+  /* Larger than the lettered tags: the text-presentation glyph is a thin outline
+     where "DD" is a bordered box, so matching sizes would leave it the fainter of
+     the two for the readers who need it most. */
+  font-size: 1.05rem;
+  /* The emoji presentation is a saturated blue tile that out-contrasts the service
+     number beside it, which is the wrong thing to win the glance. U+FE0E in the
+     markup asks for the text presentation; where a platform ignores that (likely on
+     iOS) the colour form comes back, so this is a preference, not a guarantee. */
+  color: var(--muted);
 }
 
 /* Each arrival stacks its minutes over its own crowding label, so the third
@@ -561,7 +667,7 @@ input[type='search'] {
 }
 
 .eta-value {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 650;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -569,20 +675,20 @@ input[type='search'] {
 }
 
 .eta-lead .eta-value {
-  font-size: 1.5rem;
+  font-size: 1.65rem;
   letter-spacing: -0.02em;
 }
 
 .eta-unit {
   margin-left: 0.12rem;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 500;
 }
 
 .eta-load {
-  min-height: 0.95rem;
-  font-size: 0.6rem;
+  min-height: 1rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -597,9 +703,11 @@ input[type='search'] {
   color: var(--accent);
 }
 
-/* Scheduled, not live-tracked: still shown, visibly less certain. */
+/* Scheduled, not live-tracked: still shown, visibly less certain. Not fainter than
+   this — the `*` carries the meaning, and 0.6 put the number itself under the
+   sunlight legibility floor the rest of this card is held to. */
 .eta.scheduled .eta-value {
-  opacity: 0.6;
+  opacity: 0.78;
 }
 
 .eta.scheduled .eta-value::after {
@@ -630,6 +738,7 @@ input[type='search'] {
 /* --- footer --- */
 
 .footer {
+  margin-top: auto; /* bottom of the viewport on a short page; see `body` */
   padding-top: 1.75rem;
   color: var(--muted);
   font-size: 0.75rem;
@@ -646,7 +755,7 @@ input[type='search'] {
 @media (max-width: 21.5rem) {
   .services-head,
   .service {
-    grid-template-columns: var(--col-service) 1.3fr 1fr;
+    grid-template-columns: var(--col-service) 1.5fr 1fr;
   }
 
   .services-head > span:last-child,
@@ -680,7 +789,8 @@ input[type='search'] {
   .card-head,
   .services-head,
   .service,
-  .card-msg {
+  .card-msg,
+  .sk-row {
     padding-left: 1rem;
     padding-right: 1rem;
   }

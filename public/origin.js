@@ -50,11 +50,20 @@ export function formatMetres(metres) {
  */
 export function formatDistance(metres) {
   if (typeof metres !== 'number') return '';
-  // ~80 m/min, rough by design. The floor is deliberate: the stop you are
-  // standing at reads "1 min walk" rather than "0 min walk".
+  // ~80 m/min, rough by design. The floor keeps a very short walk off "0 min
+  // walk"; the stop you are actually standing at never reaches here, because
+  // `distanceLabel` answers "Here" below AT_STOP_M first.
   const walk = Math.max(1, Math.round(metres / 80));
   return `${formatMetres(metres)} · ${walk} min walk`;
 }
+
+/**
+ * Under this many metres, the user is at the stop rather than walking to it. It
+ * is about the accuracy of a phone fix, so a walking time below it is invented
+ * from noise — and "0 m · 1 min walk" contradicts itself on the card a commuter
+ * standing at the stop looks at first.
+ */
+const AT_STOP_M = 30;
 
 // --- origin state -------------------------------------------------------
 
@@ -207,7 +216,13 @@ export function shouldRelocateOnFocus(origin, lastLoc, now) {
  */
 export function taglineFor(origin) {
   if (origin?.mode === 'stop') return `Stops near ${origin.code}, live from LTA`;
-  return 'Stops nearest you, live from LTA';
+  if (origin?.mode === 'gps') return 'Stops nearest you, live from LTA';
+  // No door taken yet — behind the intro, and on the dismissal gate. "Stops
+  // nearest you" over a page with no board describes something that is not on
+  // screen, in a mode nothing has been granted for: the same claim `chipState`
+  // already refuses to make. Still ends in the provenance, which is true either
+  // way and is the one thing worth saying before a door is chosen.
+  return 'Any stop in Singapore, live from LTA';
 }
 
 /**
@@ -274,12 +289,12 @@ export function delistedNote(origin) {
 /**
  * The distance cell on a card, which means something different in each mode.
  *
- * In gps mode it is the walk from where the user is standing, as it has always
- * been. In stop mode the board is ranked from a stop that may be nowhere near
- * them, so a walking time would be a claim about their legs that nothing
- * supports — metres from the named stop is the honest reading. The origin's own
- * card is matched **by code, not by distance**: a co-located stop can also be
- * `0 m` away and is still a different stop.
+ * In gps mode it is the walk from where the user is standing — except within
+ * `AT_STOP_M`, where there is no walk to describe. In stop mode the board is
+ * ranked from a stop that may be nowhere near them, so a walking time would be a
+ * claim about their legs that nothing supports — metres from the named stop is the
+ * honest reading. The origin's own card is matched **by code, not by distance**: a
+ * co-located stop can also be `0 m` away and is still a different stop.
  *
  * Kept separate from `formatDistance` rather than added as a second parameter:
  * `(This stop)` is not a distance format, `renderShells` still has exactly one
@@ -295,6 +310,7 @@ export function distanceLabel(stop, origin) {
     if (stop?.code === origin.code) return '(This stop)';
     return formatMetres(stop?.distanceM);
   }
+  if (typeof stop?.distanceM === 'number' && stop.distanceM < AT_STOP_M) return 'Here';
   return formatDistance(stop?.distanceM);
 }
 
@@ -377,6 +393,44 @@ export function introVariant({ isSecureContext, hasGeolocation }) {
   if (!isSecureContext) return 'insecure';
   if (!hasGeolocation) return 'unsupported';
   return 'full';
+}
+
+/**
+ * The landing when the dialog closes with no door taken — Escape, or a tap on the
+ * backdrop, which on a phone is most of the screen and so is usually an accident.
+ *
+ * It used to open the search panel, which left a page carrying a search box, no
+ * board, no gate and nothing saying why: on a 375 px phone, three quarters of the
+ * viewport was empty. This is the same shape as the refusal gate instead — one
+ * sentence for why the page is empty, and the doors as buttons underneath it,
+ * where prose does not have to describe what a button already says.
+ *
+ * The doors come back as names, not handlers: this module never touches the DOM,
+ * so `app.js` maps them. `secondary` is `null` rather than an empty label because
+ * the caller passes it straight to `gateState`, which already reads a falsy label
+ * as "no button" — one absent-button convention, not two.
+ *
+ * @param {'full' | 'insecure' | 'unsupported'} variant from `introVariant`
+ * @returns {{message: string, primary: {label: string, door: 'gps' | 'code'},
+ *   secondary: {label: string, door: 'gps' | 'code'} | null}}
+ */
+export function dismissGate(variant) {
+  if (variant === 'full') {
+    return {
+      message: 'Nothing to show yet — choose how to start.',
+      primary: { label: 'Use my current location', door: 'gps' },
+      secondary: { label: 'Enter a stop code', door: 'code' },
+    };
+  }
+  // The sentence explaining why location is impossible here was in the dialog,
+  // which has just closed. Repeating it above the one remaining door would explain
+  // a button that is not on screen; the door that does work is the whole answer,
+  // and it moves into the primary slot rather than being left as a lone ghost.
+  return {
+    message: 'Nothing to show yet — enter a stop code to see arrivals.',
+    primary: { label: 'Enter a stop code', door: 'code' },
+    secondary: null,
+  };
 }
 
 // --- the chip and the finder --------------------------------------------

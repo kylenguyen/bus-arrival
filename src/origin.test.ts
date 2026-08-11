@@ -435,7 +435,14 @@ describe('shouldRelocateOnFocus', () => {
 describe('taglineFor', () => {
   it('says nearest you in gps mode', () => {
     assert.equal(origin.taglineFor(GPS_RECORD), 'Stops nearest you, live from LTA');
-    assert.equal(origin.taglineFor(null), 'Stops nearest you, live from LTA');
+  });
+
+  // Behind the intro and on the dismissal gate there is no board on screen, so
+  // "stops nearest you" would describe something absent in a mode nothing has been
+  // granted for — the claim `chipState` already refuses to make for the same state.
+  it('claims no mode before a door is taken', () => {
+    assert.equal(origin.taglineFor(null), 'Any stop in Singapore, live from LTA');
+    assert.equal(origin.taglineFor(null).includes('nearest you'), false);
   });
 
   it('names the stop code in stop mode', () => {
@@ -519,6 +526,18 @@ describe('distanceLabel', () => {
 
   it('shows the walk from the user in gps mode', () => {
     assert.equal(origin.distanceLabel(card('43171', 420), GPS_RECORD), '420 m · 5 min walk');
+  });
+
+  // A phone fix is good to a few tens of metres, so a walking time under that is
+  // invented from noise — and "0 m · 1 min walk" contradicts itself on the card the
+  // commuter standing at the stop reads first.
+  it('says Here rather than a walking time within a fix’s accuracy', () => {
+    assert.equal(origin.distanceLabel(card('43171', 0), GPS_RECORD), 'Here');
+    assert.equal(origin.distanceLabel(card('43171', 29), GPS_RECORD), 'Here');
+  });
+
+  it('starts describing the walk at the threshold, not before it', () => {
+    assert.equal(origin.distanceLabel(card('43171', 30), GPS_RECORD), '30 m · 1 min walk');
   });
 
   it('marks the origin card in stop mode', () => {
@@ -673,6 +692,44 @@ describe('introVariant', () => {
   // and it should be the one the user can act on.
   it('prefers the insecure sentence when both are true', () => {
     assert.equal(origin.introVariant({ isSecureContext: false, hasGeolocation: false }), 'insecure');
+  });
+});
+
+describe('dismissGate', () => {
+  it('offers both doors, location first, on a full variant', () => {
+    const copy = origin.dismissGate('full');
+    assert.equal(copy.primary.door, 'gps');
+    assert.equal(copy.secondary.door, 'code');
+    assert.equal(copy.primary.label, 'Use my current location');
+    assert.equal(copy.secondary.label, 'Enter a stop code');
+  });
+
+  // A dismissal lands on an empty page; the sentence's whole job is to say why,
+  // rather than repeating what the buttons underneath it already say.
+  it('says why the page is empty', () => {
+    for (const variant of ['full', 'insecure', 'unsupported']) {
+      assert.match(origin.dismissGate(variant).message, /Nothing to show yet/);
+    }
+  });
+
+  // The remaining door is promoted rather than left as a lone secondary: with no
+  // primary, the only action on the page renders as the quieter of the two styles.
+  it('promotes the stop-code door and drops the second when location cannot work', () => {
+    for (const variant of ['insecure', 'unsupported']) {
+      const copy = origin.dismissGate(variant);
+      assert.equal(copy.primary.door, 'code');
+      assert.equal(copy.secondary, null);
+    }
+  });
+
+  // It is handed straight to `gateState`, so the two have to agree on what an
+  // absent button looks like.
+  it('produces one visible button through gateState when location cannot work', () => {
+    const copy = origin.dismissGate('unsupported');
+    const state = origin.gateState(copy.message, copy.primary, copy.secondary);
+    assert.equal(state.primary.hidden, false);
+    assert.equal(state.primary.label, 'Enter a stop code');
+    assert.equal(state.secondary.hidden, true);
   });
 });
 
