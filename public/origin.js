@@ -1160,3 +1160,49 @@ function panel(base, state, rows, heading, note, busy) {
     expanded: rows.length > 0,
   };
 }
+
+/** How close the next bus has to be before its mark is drawn on its way here. */
+const INCOMING_MINS = 3;
+
+/**
+ * Minutes until an ISO arrival, floored. The board rounds down throughout, so a bus 1:59 out
+ * is "1 min" and one 0:59 out is already "Arr" — a rider told "1 min" who then watches it
+ * pull away has been lied to, and one told "Arr" for a bus still coming has not.
+ *
+ * `now` is a parameter rather than a clock read, because this module holds no clock
+ * (AGENTS.md). `app.js` reads it once per painted row, so the number and the mark beside it
+ * cannot land on opposite sides of a minute boundary.
+ *
+ * @param {string} iso
+ * @param {number} now epoch milliseconds
+ * @returns {number}
+ */
+export function minutesUntil(iso, now) {
+  return Math.floor((new Date(iso).getTime() - now) / 60_000);
+}
+
+/**
+ * Whether the next bus is close enough that its vehicle mark should be drawn with trails —
+ * on its way here, rather than merely on the list. The mark has only ever described
+ * `buses[0]`, so this is that one bus's question.
+ *
+ * Three minutes is where the answer stops being information and turns into decoration: it is
+ * about as long as it takes to put a phone away and stand up, and a mark in motion on every
+ * row of a nine-service card says nothing about any of them.
+ *
+ * The near bound is `Arr`, not departure. `Arr` covers a bus 0:59 out and equally one that
+ * passed ten minutes ago and is still on screen because a refresh failed, and no field
+ * separates the two — so the mark stops moving exactly where the number stops counting. An
+ * untracked bus is excluded whatever its timing says: trails claim a specific vehicle is
+ * approaching, which a timetable estimate cannot support. `NaN` from an unparseable timestamp
+ * fails both comparisons, which is the answer we would have picked for it anyway.
+ *
+ * @param {{estimatedArrival?: string | null, monitored?: boolean} | null | undefined} bus
+ * @param {number} now epoch milliseconds
+ * @returns {boolean}
+ */
+export function isIncoming(bus, now) {
+  if (!bus || !bus.estimatedArrival || !bus.monitored) return false;
+  const mins = minutesUntil(bus.estimatedArrival, now);
+  return mins >= 1 && mins <= INCOMING_MINS;
+}

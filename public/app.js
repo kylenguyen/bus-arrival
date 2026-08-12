@@ -32,6 +32,8 @@ import {
   gateMessageFor,
   gateState,
   introVariant,
+  isIncoming,
+  minutesUntil,
   moveActive,
   noStopsMessage,
   originCoord,
@@ -440,11 +442,6 @@ function clearSkeleton() {
 
 // --- rendering ----------------------------------------------------------
 
-/** Minutes until arrival, floored, from the server's ISO timestamp. */
-function minutesUntil(iso) {
-  return Math.floor((new Date(iso).getTime() - Date.now()) / 60_000);
-}
-
 const LOAD_LABEL = { SEA: 'Seats', SDA: 'Standing', LSD: 'Crowded' };
 const LOAD_TITLE = {
   SEA: 'Seats available',
@@ -465,8 +462,12 @@ const LOAD_TITLE = {
  *
  * The empty lead cell keeps its reserved label height so a service with no crowding
  * data does not sit a line taller than its neighbours.
+ *
+ * `now` is handed in rather than read here: the row's vehicle mark asks the same clock
+ * question through `isIncoming`, and two reads either side of a minute boundary would put a
+ * moving mark next to a number that says four minutes.
  */
-function renderEta(bus, index) {
+function renderEta(bus, index, now) {
   const lead = index === 0;
   const classes = ['eta'];
   if (lead) classes.push('eta-lead');
@@ -477,7 +478,7 @@ function renderEta(bus, index) {
     </div>`;
   }
 
-  const mins = minutesUntil(bus.estimatedArrival);
+  const mins = minutesUntil(bus.estimatedArrival, now);
   if (mins <= 1) classes.push('arriving');
   if (!bus.monitored) classes.push('scheduled');
 
@@ -545,6 +546,14 @@ function renderEta(bus, index) {
  * Trails give the bus a direction and put it on its way here. They drift — see
  * `mark-drift` in the stylesheet — because at 11 px two motionless dashes are as easily
  * taken for scuffs on the drawing as for speed.
+ *
+ * Which is the whole argument for drawing them only when a bus actually is on its way:
+ * `isIncoming` in origin.js. Every mark carrying trails made them a fact about the board's
+ * existence rather than about any arrival on it — nine of them moving at once on one card,
+ * saying the same nothing nine times. Inside three minutes they are the one thing on the row
+ * that says "now", and outside it the mark is the plain silhouette it was always taken for.
+ * So their absence is an answer too, and the drift is what a rider's eye is caught by on the
+ * one row that has earned it.
  */
 const VEHICLE = {
   DD: {
@@ -592,6 +601,11 @@ const VEHICLE = {
  * occupies rather than floating above or below it. Round caps, which is why the leftmost
  * ink lands at -5.65 and every box above crops to -5.85: the same 0.2 of padding the
  * bodies get, for the same reason.
+ *
+ * Emitted on every mark whether or not it is drawn; `is-incoming` on the parent `<svg>` is
+ * what decides, in the stylesheet. Two hidden paths cost nothing, and the alternative would
+ * put the rule in two places — this function and the hand-written sample mark in index.html,
+ * which is static markup and can only opt in with a class.
  */
 function trail([upper, lower]) {
   return (
@@ -601,23 +615,30 @@ function trail([upper, lower]) {
   );
 }
 
-/** The tag markup for one vehicle silhouette. Shared with the intro dialog's sample card. */
-function vehicleIcon({ title, label, box, trail: pair, art }) {
+/**
+ * The tag markup for one vehicle silhouette. Shared with the intro dialog's sample card.
+ *
+ * `incoming` only reaches the class list — the trail markup is the same either way, so no
+ * geometry moves when a bus crosses the threshold and the boxes stay cropped as drawn. The
+ * aria-label is deliberately left alone: the lead ETA sits inches away already reading "3
+ * min", and a mark that also announced "arriving" would be the same fact read twice.
+ */
+function vehicleIcon({ title, label, box, trail: pair, art }, incoming) {
   return (
     `<span class="tag-icon" title="${title}" aria-label="${label}">` +
-    `<svg class="tag-svg" viewBox="${box}" fill="currentColor" aria-hidden="true" focusable="false">` +
+    `<svg class="tag-svg${incoming ? ' is-incoming' : ''}" viewBox="${box}" fill="currentColor" aria-hidden="true" focusable="false">` +
     `${trail(pair)}${art}</svg></span>`
   );
 }
 
 /** Vehicle facts that belong to the service line, tucked under its number. */
-function renderTags(bus) {
+function renderTags(bus, now) {
   if (!bus) return '';
   const tags = [];
   // An unrecognised code from upstream, or none at all, simply matches nothing and draws
   // nothing. That silence used to be a single decker's too and is now its own answer.
   const vehicle = VEHICLE[bus.type];
-  if (vehicle) tags.push(vehicleIcon(vehicle));
+  if (vehicle) tags.push(vehicleIcon(vehicle, isIncoming(bus, now)));
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';
 }
 
@@ -627,17 +648,22 @@ function renderServices(stop) {
     return '<p class="card-msg">No buses at this hour.</p>';
   }
 
+  // One clock read for the whole card, passed to every cell that needs it: the numbers and
+  // the marks answer the same question, and two reads a millisecond apart could answer it
+  // differently at a minute boundary.
+  const now = Date.now();
+
   const rows = stop.services
     .map(
       (service) => `
       <li class="service">
         <div class="service-id">
           <span class="service-no">${escape(service.serviceNo)}</span>
-          ${renderTags(service.buses[0])}
+          ${renderTags(service.buses[0], now)}
         </div>
-        ${renderEta(service.buses[0], 0)}
-        ${renderEta(service.buses[1], 1)}
-        ${renderEta(service.buses[2], 2)}
+        ${renderEta(service.buses[0], 0, now)}
+        ${renderEta(service.buses[1], 1, now)}
+        ${renderEta(service.buses[2], 2, now)}
       </li>`,
     )
     .join('');

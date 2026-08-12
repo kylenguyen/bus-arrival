@@ -1814,3 +1814,75 @@ describe('titleCase', () => {
     assert.equal(origin.titleCase(42), '');
   });
 });
+
+/**
+ * The rounding rule the board has always applied and never had under test —
+ * docs/datamall-activation.md asks for it as a fixed offset table rather than a reading of
+ * the source, because "floors" and "rounds down to the minute a rider can act on" are the
+ * same sentence until one of them is off by a minute.
+ */
+describe('minutesUntil', () => {
+  const now = Date.parse('2026-01-01T12:00:00Z');
+  const at = (seconds: number) => new Date(now + seconds * 1_000).toISOString();
+
+  it('rounds down, so a bus is never promised more time than it has', () => {
+    assert.equal(origin.minutesUntil(at(59), now), 0);
+    assert.equal(origin.minutesUntil(at(60), now), 1);
+    assert.equal(origin.minutesUntil(at(119), now), 1);
+    assert.equal(origin.minutesUntil(at(120), now), 2);
+    assert.equal(origin.minutesUntil(at(239), now), 3);
+  });
+
+  // Both render as "Arr": the card has no third state for a bus that has already gone, and
+  // the floor is what puts a half-minute-late timing on the right side of zero.
+  it('goes negative for a timing already past', () => {
+    assert.equal(origin.minutesUntil(at(-30), now), -1);
+    assert.equal(origin.minutesUntil(at(0), now), 0);
+  });
+
+  it('is NaN for an unparseable timestamp rather than a wrong number', () => {
+    assert.equal(Number.isNaN(origin.minutesUntil('not a date', now)), true);
+  });
+});
+
+describe('isIncoming', () => {
+  const now = Date.parse('2026-01-01T12:00:00Z');
+  const bus = (seconds: number, monitored = true) => ({
+    estimatedArrival: new Date(now + seconds * 1_000).toISOString(),
+    monitored,
+  });
+
+  // The bounds are in displayed minutes, not seconds: the mark moves for exactly the rows
+  // whose lead number reads 3, 2 or 1.
+  it('covers 1 through 3 minutes and stops either side', () => {
+    assert.equal(origin.isIncoming(bus(60), now), true); // "1 min"
+    assert.equal(origin.isIncoming(bus(180), now), true); // "3 min"
+    assert.equal(origin.isIncoming(bus(239), now), true); // still "3 min"
+    assert.equal(origin.isIncoming(bus(240), now), false); // "4 min"
+  });
+
+  it('stops at Arr — the number stops counting, the mark stops moving', () => {
+    assert.equal(origin.isIncoming(bus(59), now), false);
+    assert.equal(origin.isIncoming(bus(0), now), false);
+  });
+
+  // A card whose refresh keeps failing holds its last timings, so a long-departed bus can
+  // sit on screen reading "Arr" indefinitely. Nothing about it should be in motion.
+  it('stays off for a stale timing', () => {
+    assert.equal(origin.isIncoming(bus(-300), now), false);
+  });
+
+  // Trails claim a particular vehicle is approaching, which a timetable estimate cannot
+  // support however close it says the bus is.
+  it('refuses an untracked bus at any timing', () => {
+    assert.equal(origin.isIncoming(bus(120, false), now), false);
+    assert.equal(origin.isIncoming(bus(60, false), now), false);
+  });
+
+  it('refuses a missing bus, a missing timing and an unparseable one', () => {
+    assert.equal(origin.isIncoming(null, now), false);
+    assert.equal(origin.isIncoming(undefined, now), false);
+    assert.equal(origin.isIncoming({ estimatedArrival: null, monitored: true }, now), false);
+    assert.equal(origin.isIncoming({ estimatedArrival: 'not a date', monitored: true }, now), false);
+  });
+});

@@ -1015,10 +1015,14 @@ input[type='search']::-webkit-search-cancel-button {
   width: auto;
 }
 
-/* The trails behind every vehicle mark, drifting. Two dashes held still at this size are
-   as easily taken for scuffs on the drawing as for speed; moving, they say the bus is on
-   its way, which is the whole point of putting them there — the mark describes the next
-   arrival, not the route.
+/* The trails behind a vehicle mark whose bus is nearly here, drifting. Two dashes held still
+   at this size are as easily taken for scuffs on the drawing as for speed; moving, they say
+   the bus is on its way, which is the whole point of putting them there — the mark describes
+   the next arrival, not the route.
+
+   Only that mark, though: `isIncoming` in origin.js hands `app.js` the verdict and `app.js`
+   puts `is-incoming` on the `<svg>`. See the note above `VEHICLE` in app.js for why. Trails
+   on every mark made the drift a property of the page rather than of any arrival on it.
 
    Two things here are load-bearing and neither is obvious:
 
@@ -1031,7 +1035,11 @@ input[type='search']::-webkit-search-cancel-button {
    rewrites the card body's innerHTML on every ten-second refresh, which restarts this
    animation from 0% on every mark at once; ten seconds is not a whole number of 1.6s
    cycles, so there is always a discontinuity, and the only question is whether it happens
-   where it can be seen. Do not "tidy" the endpoints to full opacity. */
+   where it can be seen. Do not "tidy" the endpoints to full opacity.
+
+   That same ten-second rewrite is when a mark gains or loses its trails, so the state is up
+   to one tick behind the clock — exactly as behind as the number sitting beside it, which is
+   the only comparison a rider can actually make. */
 @keyframes mark-drift {
   0% {
     opacity: 0.2;
@@ -1047,8 +1055,17 @@ input[type='search']::-webkit-search-cancel-button {
   }
 }
 
-.tag-svg .trail-a,
-.tag-svg .trail-b {
+/* No trails unless the bus is minutes out. Hidden rather than left out of the markup, because
+   each viewBox is cropped to include the band the trails occupy: drop the ink and the body
+   stays on exactly the pixels it was on, so no mark shifts sideways as a service counts down
+   past three minutes and no row changes width. */
+.tag-svg:not(.is-incoming) .trail-a,
+.tag-svg:not(.is-incoming) .trail-b {
+  display: none;
+}
+
+.tag-svg.is-incoming .trail-a,
+.tag-svg.is-incoming .trail-b {
   animation: mark-drift 1.6s ease-in-out infinite;
 }
 
@@ -1085,9 +1102,13 @@ input[type='search']::-webkit-search-cancel-button {
   --mark-phase: -1.28s;
 }
 
+/* Motion off, meaning intact: an incoming mark keeps its trails, held still at full ink, and
+   a mark that is not incoming has none to hold — the `:not()` rule above has already taken
+   them. Presence carries the state and drift only draws the eye to it, which is a bargain
+   that was not available while every mark had trails. */
 @media (prefers-reduced-motion: reduce) {
-  .tag-svg .trail-a,
-  .tag-svg .trail-b {
+  .tag-svg.is-incoming .trail-a,
+  .tag-svg.is-incoming .trail-b {
     animation: none;
     opacity: 1;
     transform: none;

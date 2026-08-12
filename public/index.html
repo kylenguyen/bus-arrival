@@ -213,10 +213,16 @@
                        sample is static markup, and a sample that still showed "DD" would be
                        teaching the reader a label the live board no longer uses. The trail
                        classes are the same ones the stylesheet animates, so this mark drifts
-                       exactly as the live one does. -->
+                       exactly as the live one does.
+
+                       `is-incoming` is here on purpose, and it belongs to the "3 min" below
+                       it: on the live board only a bus inside three minutes carries trails
+                       (`isIncoming` in origin.js). A sample showing that timing with a still
+                       mark would teach the pairing backwards. Change the sample's minutes and
+                       this class goes with them. -->
                   <span class="service-tags"
                     ><span class="tag-icon" title="Double deck"
-                      ><svg class="tag-svg" viewBox="-5.85 0.95 36.9 21.45" fill="currentColor" aria-hidden="true" focusable="false">
+                      ><svg class="tag-svg is-incoming" viewBox="-5.85 0.95 36.9 21.45" fill="currentColor" aria-hidden="true" focusable="false">
                         <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
                           <path class="trail-a" d="M-4.8 6.5H-1.6" /><path class="trail-b" d="M-3.4 13.5H-1.6" />
                         </g>
