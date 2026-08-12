@@ -499,19 +499,89 @@ function renderEta(bus, index) {
   return `<div class="${classes.join(' ')}"${title}>${value}${load}</div>`;
 }
 
+/**
+ * The vehicle silhouettes, keyed by DataMall's `Type`. "DD" and "Bendy" were the rider's
+ * only clue before, and neither is a rider's word — the first is an operator code and the
+ * second only names the joint if you already know what it is. A shape says "tall bus" or
+ * "long bus" in no language at all.
+ *
+ * Inline SVG is a deliberate break from the card's text-glyph idiom (★ ▾ ↻ ×), because
+ * Unicode offers nothing usable: U+1F68C is a single decker and emoji-presentation only,
+ * so U+FE0E buys an inconsistent monochrome fallback of the wrong vehicle, and there is
+ * no articulated bus at all.
+ *
+ * Each carries a viewBox cropped to its own artwork rather than a shared one. Drawn on a
+ * common box the tall bus filled more of it than the low bendy, so a single CSS height
+ * came out 20% taller for one than the other and neither matched the wheelchair glyph
+ * beside them. Cropped, one height makes every mark's ink exactly equal — which is why
+ * the box below is padded a touch: an SVG clips to its viewport, and a stroke sitting flush
+ * on the edge would lose its outer half to the crop.
+ *
+ * Height is therefore no longer available to say "this one is taller", and the divider
+ * carries that alone. Single deckers stay unmarked — absence means "ordinary bus", and a
+ * mark on every row would cost the glance more than it pays.
+ *
+ * Outlines at a hair under 2 units, not solid silhouettes, and no windows. A filled body
+ * was tried and carried far more ink than the wheelchair glyph it stands beside, which put
+ * the vehicle ahead of the access mark in the glance; drawn open, the two weigh the same.
+ * Window bands went with it — at this size they turned the body into a stack of drawers,
+ * and once the divider is doing the work they were only ever texture.
+ *
+ * So a single divider is the whole message, and it is the same drawing rotated: across for
+ * a double decker, because the decks stack; down for a bendy, because the sections hinge.
+ * Read side by side that is one idea told twice, which is why neither needs a legend. The
+ * wheels are filled, small, and the only solid ink in either mark — an outlined circle at
+ * this size fills in and turns muddy, and they are what stop an empty rounded box from
+ * reading as a container. Three of them is the bendy's other tell.
+ */
+const VEHICLE = {
+  DD: {
+    title: 'Double deck',
+    label: 'Double deck bus',
+    // Body 1.15–30.85 × 1.15–18.85 once the 1.7 stroke is counted, wheels down to 22.2.
+    box: '0.95 0.95 30.1 21.45',
+    art:
+      '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">' +
+      '<rect x="2" y="2" width="28" height="16" rx="3.5"/><path d="M2 10h28"/></g>' +
+      '<g fill="currentColor"><circle cx="9" cy="20.3" r="1.9"/>' +
+      '<circle cx="23" cy="20.3" r="1.9"/></g>',
+  },
+  BD: {
+    title: 'Bendy bus',
+    label: 'Bendy bus',
+    box: '0.45 5.45 31.1 16.85',
+    art:
+      '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">' +
+      '<rect x="1.5" y="6.5" width="29" height="11.5" rx="3"/><path d="M15.5 6.5v11.5"/></g>' +
+      '<g fill="currentColor"><circle cx="6.5" cy="20.3" r="1.8"/>' +
+      '<circle cx="16" cy="20.3" r="1.8"/><circle cx="25.5" cy="20.3" r="1.8"/></g>',
+  },
+};
+
+/** The tag markup for one vehicle silhouette. Shared with the intro dialog's sample card. */
+function vehicleIcon({ title, label, box, art }) {
+  return (
+    `<span class="tag-icon" title="${title}" aria-label="${label}">` +
+    `<svg class="tag-svg" viewBox="${box}" fill="currentColor" aria-hidden="true" focusable="false">` +
+    `${art}</svg></span>`
+  );
+}
+
 /** Vehicle facts that belong to the service line, tucked under its number. */
 function renderTags(bus) {
   if (!bus) return '';
   const tags = [];
-  if (bus.type === 'DD') tags.push('<span class="tag" title="Double deck">DD</span>');
-  if (bus.type === 'BD') tags.push('<span class="tag" title="Bendy bus">Bendy</span>');
+  // An unrecognised code from upstream simply matches nothing and draws nothing, which is
+  // the same silence a single decker gets.
+  const vehicle = VEHICLE[bus.type];
+  if (vehicle) tags.push(vehicleIcon(vehicle));
   if (bus.wheelchairAccessible) {
     // U+267F followed by U+FE0E, the text-presentation selector: as an emoji this is
     // a saturated blue tile that out-contrasts the service number next to it, which
     // is not what should win the glance. A platform is free to ignore the selector
     // and render the emoji anyway, so it is a preference rather than a guarantee.
     tags.push(
-      '<span class="tag tag-icon" title="Wheelchair accessible" aria-label="Wheelchair accessible">♿︎</span>',
+      '<span class="tag-icon" title="Wheelchair accessible" aria-label="Wheelchair accessible">♿︎</span>',
     );
   }
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';

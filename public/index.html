@@ -209,7 +209,18 @@
               <li class="service">
                 <div class="service-id">
                   <span class="service-no">61</span>
-                  <span class="service-tags"><span class="tag">DD</span></span>
+                  <!-- Kept in step with VEHICLE.DD in app.js by hand: this sample is static
+                       markup, and a sample that still showed "DD" would be teaching the
+                       reader a label the live board no longer uses. -->
+                  <span class="service-tags"
+                    ><span class="tag-icon" title="Double deck"
+                      ><svg class="tag-svg" viewBox="0.95 0.95 30.1 21.45" fill="currentColor" aria-hidden="true" focusable="false">
+                        <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+                          <rect x="2" y="2" width="28" height="16" rx="3.5" /><path d="M2 10h28" />
+                        </g>
+                        <g fill="currentColor"><circle cx="9" cy="20.3" r="1.9" /><circle cx="23" cy="20.3" r="1.9" /></g>
+                      </svg></span
+                  ></span>
                 </div>
                 <div class="eta eta-lead">
                   <span class="eta-value">3<span class="eta-unit">min</span></span>
