@@ -104,7 +104,6 @@ const el = {
   tagline: document.getElementById('tagline'),
   intro: document.getElementById('intro'),
   introGps: document.getElementById('intro-gps'),
-  introGpsSub: document.getElementById('intro-gps-sub'),
   introNoGps: document.getElementById('intro-no-gps'),
   introCode: document.getElementById('intro-code'),
 };
@@ -1297,14 +1296,16 @@ const DOOR = {
 let introVariantUsed = 'full';
 
 /**
- * The first-visit chooser. Two doors and a sentence about what the site is,
- * because a native permission prompt cannot explain either.
+ * The first-visit chooser: one example of what the board answers, then the two
+ * doors that get there. It shows before it asks because a native permission
+ * prompt can explain neither, and a stranger has been shown nothing else.
  *
  * When location cannot possibly work — an insecure context, or no geolocation at
- * all — the button is *removed* rather than hidden or disabled. A hidden button is
+ * all — the door is *removed* rather than hidden or disabled. A hidden button is
  * still nothing; a disabled one is a keyboard stop and a screen-reader
- * announcement for a promise the page cannot keep. Its sub-label goes with it, or
- * "Stops nearest you" is left captioning nothing.
+ * announcement for a promise the page cannot keep. Removing it also hands the
+ * dialog's `autofocus` to the address door, which is the right answer in that
+ * state.
  */
 function showIntro() {
   if (introSeen) return;
@@ -1317,8 +1318,11 @@ function showIntro() {
   introVariantUsed = variant;
 
   if (variant !== 'full') {
+    // The door's caption — "Stops nearest you" — is a child of the button rather
+    // than a sibling of it, so this one removal takes both. If the card is ever
+    // unpicked back into a bare button with the caption beside it, that caption
+    // has to be removed here too, or it is left captioning nothing.
     el.introGps.remove();
-    el.introGpsSub.remove();
     el.introNoGps.textContent = INTRO_NO_GPS[variant];
     el.introNoGps.hidden = false;
   }

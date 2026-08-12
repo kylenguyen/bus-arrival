@@ -21,9 +21,10 @@ not a bug.
 
 ## The journey
 
-1. First visit: a dialog explains the site in two sentences and offers the two
-   doors. Nothing loads and nothing is asked for until one is chosen — a native
-   permission prompt cannot say what it is for, so it no longer comes first.
+1. First visit: a dialog shows one example of what the board answers — a real
+   stop card with its next arrivals — then asks, offering the two doors. Nothing
+   loads and nothing is asked for until one is chosen; a native permission prompt
+   cannot say what it is for, so it no longer comes first.
    Dismissing the dialog lands on a gate carrying one sentence and the same two
    doors as buttons, remembers nothing, and brings the dialog back next visit.
    Choose location and the browser asks; on HTTPS the grant is

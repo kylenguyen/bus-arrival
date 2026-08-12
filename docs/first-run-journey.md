@@ -1,16 +1,24 @@
 # First-run journey split: choose location or a stop code
 
 > **Design record, not current documentation.** The plan below is kept as it was
-> approved. Two sections at the end are the deltas, and the second one supersedes
-> everything this document says about the internals of `#finder`: the
-> `#use-location` button, `.finder-loc`, `.finder-or` and the `aria-pressed` ✓ no
-> longer exist. Read *Superseded — `#use-location` and the two-door panel* before
-> trusting any `#finder` markup, CSS or `openSearch`/`closeSearch` detail here. The
-> two doors, `decideBoot`, the intro dialog and the transient-activation rule are
-> all still current. The colour tokens have since been replaced wholesale, so any hex
-> value quoted below is historical — `styles.css` is the only source of truth for those.
-> The dialog did get the `border: 1px solid var(--border)` this document floats as a
-> maybe, and it is now load-bearing.
+> approved. Three sections at the end are the deltas, and two of them supersede
+> parts of the body outright:
+>
+> - *Superseded — `#use-location` and the two-door panel* replaces everything here
+>   about the internals of `#finder`. The `#use-location` button, `.finder-loc`,
+>   `.finder-or` and the `aria-pressed` ✓ no longer exist. Read it before trusting
+>   any `#finder` markup, CSS or `openSearch`/`closeSearch` detail below.
+> - *Superseded — the intro dialog's contents* replaces everything here about what
+>   is inside `<dialog id="intro">`. The markup sketch, its CSS, `#intro-gps-sub`,
+>   `.intro-actions` and the primary/ghost button pair are all gone. Read it before
+>   trusting any `#intro` markup or CSS below.
+>
+> Still current: the two doors themselves, `decideBoot`, `introVariant`, the
+> dismissal gate and the transient-activation rule. The colour tokens have since
+> been replaced wholesale, so any hex value quoted below is historical —
+> `styles.css` is the only source of truth for those. The dialog did get the
+> `border: 1px solid var(--border)` this document floats as a maybe, and it is now
+> load-bearing.
 
 ## Context
 
@@ -460,3 +468,61 @@ What changed, and why a reader of the sections above must not reintroduce it:
 The transient-activation rule is unchanged and still governs: the delegated
 `#origins` click handler reaches `startWithLocation()` with nothing awaited above
 it.
+
+## Superseded — the intro dialog's contents
+
+The two doors, `decideBoot`, `introVariant`, the dismissal gate and the
+transient-activation rule are all unchanged. What this section supersedes is
+everything this document says about what is *inside* `<dialog id="intro">`: the
+markup sketch in *public/index.html* and the rules in *public/styles.css* both
+describe a card that no longer exists.
+
+**What changed, and why.** The card asked a stranger for their location having
+shown them nothing — four paragraphs asserting that the app is simple and private,
+with no evidence of either. Trust does not come from adjectives. It now leads with
+one real board card, captioned `Example`: a stop name, its distance, a service
+number, three arrival times and a crowding pill, built from the board's own
+`.card`/`.service`/`.eta` classes rather than a mock of them, so it cannot drift
+into promising a layout the board does not produce. Then one sentence, then the
+doors. Four designs were built behind a throwaway `?intro=` switch and compared on
+a real phone; this is the one that won.
+
+**Concretely, against the sketch above:**
+
+- `#intro-gps-sub` no longer exists. Both captions sit *inside* their own button,
+  so each is already part of that button's accessible name, and removing a door
+  takes its caption with it. `showIntro()`'s removal path is one `.remove()`.
+- `#intro-code-sub` existed briefly during the redesign and is also gone, for the
+  same reason. It had no reader — no CSS rule, no `aria-describedby`.
+- `.intro-actions`, `.intro-q` and the `button.primary` / `button.ghost` pair are
+  replaced by `.intro-doors` and two `.intro-door` cards, each a glyph, a label and
+  a line of detail. The doors are deliberately equal: the second is not a decline,
+  it is the other journey.
+- `.intro-door` carries `border-color: var(--muted)`, not `--border`. These sit on
+  the dialog, which is `--surface` — the same colour the base `button` rule gives
+  them — and they have no shadow, so that 1px edge is the only thing saying they
+  are controls. At `--border` it measured 1.46:1 light and 1.40:1 dark against
+  WCAG 1.4.11's 3:1 floor. The pair it replaced never needed it: the primary door
+  was an accent fill.
+- New: `.intro-band`, an accent strip bleeding to the dialog's edge via negative
+  margins, rounding its top corners at `calc(var(--radius) - 1px)` to match the
+  padding box inside the dialog's 1px border. Its text is `--on-accent`, never
+  `#fff` — 8.9:1 light and 8.4:1 dark.
+- New: `dialog#intro:modal { max-height: calc(100dvh - 2rem); overflow-y: auto;
+  overscroll-behavior: contain }`. The card is 596 px, so on most phones it
+  scrolls. `:modal` is the mirror of the `:not(:modal)` note on `.intro-inflow`:
+  unrecognised below Safari 15.4, which is exactly where the in-flow fallback
+  wants the *page* to scroll instead.
+- New: `@media (max-height: 620px) { .intro-sample { display: none } }`. At
+  320×568 — an iPhone SE 1st gen, which reaches iOS 15.8 and so takes the `:modal`
+  path — the card is 646 px against 536 px of dialog and the *address door* was
+  what fell off the bottom. Showing the answer is worth a lot; the choice is worth
+  more. Known limit: a media query reads the large viewport while `100dvh` reads
+  the small one, so on a 375×667 phone with browser chrome the query does not fire
+  and the second door sits just below the fold until the dialog is scrolled. There
+  is no media feature for the dynamic viewport.
+
+**Verified** across 320/360/375/390/430 × 667/760/844 in both schemes, plus the
+`.intro-inflow` fallback, the insecure-context variant, all three refusal codes,
+both dismissal paths and a granted fix. Not verified, and not verifiable here: the
+iOS transient-activation chain from the door's click to `getCurrentPosition`.

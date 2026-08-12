@@ -34,11 +34,23 @@ settings screen. It is there because the board cannot rank anything without a
 coordinate, and the two ways of getting one are genuinely different journeys: the
 alternative is a native permission prompt as the first thing a stranger sees,
 with nothing on screen to explain it, and no way in at all for someone who will
-not share a location. It is one question, answered by tapping one of two buttons,
-never shown again once a coordinate is in hand, and stored as which door was used
-rather than as a preference. Do not grow it into a settings panel, and do not
-simplify it away — the second door is the whole reason the first one is allowed to
-be refused.
+not share a location. It shows before it asks: an accent band carrying the
+heading, then one real board card captioned `Example`, then the question and the
+two doors. The example is built from the board's own `.card` classes rather than a
+mock of them, so it cannot promise a layout the board does not produce, and it is
+there because a stranger is being asked for their location by a page that has
+otherwise shown them nothing. The doors are equal tappable cards — glyph, label,
+one line of detail — not a primary button and a ghost, because the second is not a
+decline but the other journey. Still one question, never shown again once a
+coordinate is in hand, and stored as which door was used rather than as a
+preference. Do not grow it into a settings panel or a second slide, do not
+simplify it away, and do not flatten the doors back to one primary and one ghost —
+the second door is the whole reason the first one is allowed to be refused.
+
+On a viewport under 620 px tall the example is dropped and the doors stay
+([public/styles.css](public/styles.css)). Showing the answer is worth a great
+deal, but not the choice itself: at 320×568 the whole card is 646 px against
+536 px of dialog, and what fell off the bottom was the address door.
 
 Dismissing it — Escape, or a tap on the backdrop, which on a phone is most of the
 screen and so is usually an accident — lands on the **gate**, carrying one sentence

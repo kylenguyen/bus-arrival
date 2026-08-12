@@ -160,26 +160,94 @@
          opens it and fills in the one adaptive sentence. The two doors both end
          at a coordinate, which is the only thing the board needs. -->
     <dialog id="intro" aria-labelledby="intro-title">
-      <h2 id="intro-title">Bus arrival times</h2>
-      <p>
-        A quick way to see when the next bus is coming, at any stop in Singapore. That’s all it
-        does — no sign-up, nothing to set up.
-      </p>
-      <p class="intro-q">How would you like to start?</p>
-      <div class="intro-actions">
-        <button id="intro-gps" type="button" class="primary" autofocus
-                aria-describedby="intro-gps-sub">Use my current location</button>
-        <p class="intro-sub" id="intro-gps-sub">Stops nearest you</p>
-        <!-- Replaces the location button when it cannot possibly work. -->
+      <!-- The example is the point. A stranger is being asked for a location by a
+           page that has shown them nothing, so the card shows the answer first —
+           one real board card, captioned as an example — and asks second. It is
+           built from the board’s own classes rather than a mock of them, so it
+           cannot drift into promising a layout the board does not produce.
+
+           Four ids have readers, and only the first two are `showIntro()`’s:
+             #intro-gps     the location door, and the outermost tappable node —
+                            `showIntro()` removes it when location cannot work
+             #intro-no-gps  the hidden slot it says why into, in that case
+             #intro-code    the address door; app.js binds its click
+             #intro-title   what `aria-labelledby` on the dialog points at
+           Neither caption has an id. Both sit *inside* their own button, so each
+           is already part of that button’s accessible name — an id and an
+           `aria-describedby` would only say it twice — and removing a door takes
+           its caption with it.
+
+           Both door labels are verbatim `ADDRESS_DOOR_LABEL` and its GPS twin in
+           public/origin.js, asserted in src/origin.test.ts. Do not reword them;
+           the card’s voice lives in the lines around them. -->
+      <div class="intro-band">
+        <span class="intro-band-mark" aria-hidden="true">🚍</span>
+        <h2 id="intro-title">Your next bus, in two taps</h2>
+      </div>
+
+      <div class="intro-sample">
+        <p class="intro-eyebrow">Example</p>
+        <p class="visually-hidden">
+          An example of the board: a bus stop, its distance from you, and the next three
+          arrivals for each service with how full the next one is.
+        </p>
+        <div class="card" aria-hidden="true">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="card-name">Opp Blk 123</span>
+              <span class="card-sub">
+                <span class="meta-where"><span class="meta-code">43179</span>&nbsp;· Ang Mo Kio Ave 3</span>
+                <span class="meta-dist">180 m</span>
+              </span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="services-head" aria-hidden="true">
+              <span>Bus</span><span>Next</span><span>Then</span><span>After</span>
+            </div>
+            <ul class="services">
+              <li class="service">
+                <div class="service-id">
+                  <span class="service-no">61</span>
+                  <span class="service-tags"><span class="tag">DD</span></span>
+                </div>
+                <div class="eta eta-lead">
+                  <span class="eta-value">3<span class="eta-unit">min</span></span>
+                  <span class="eta-load load-sea">Seats</span>
+                </div>
+                <div class="eta"><span class="eta-value">12</span></div>
+                <div class="eta"><span class="eta-value">25</span></div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <p>No sign-up, no settings. Where should we look?</p>
+
+      <!-- Two doors as equal cards rather than a primary and a ghost: the second
+           one is not a decline, it is the other journey, and it is the whole
+           reason the first is allowed to be refused. -->
+      <div class="intro-doors">
+        <button id="intro-gps" type="button" class="intro-door" autofocus>
+          <span class="intro-door-mark" aria-hidden="true">📍</span>
+          <span class="intro-door-text">
+            <strong>Use my current location</strong>
+            Stops nearest you
+          </span>
+        </button>
         <p class="intro-sub" id="intro-no-gps" hidden></p>
-        <!-- The label is `ADDRESS_DOOR_LABEL` in public/origin.js, written out
-             here because static markup cannot import it. Keep the two in step. -->
-        <button id="intro-code" type="button" class="ghost"
-                aria-describedby="intro-code-sub">Enter an address</button>
-        <p class="intro-sub" id="intro-code-sub">A postal code, building or road</p>
+        <button id="intro-code" type="button" class="intro-door">
+          <span class="intro-door-mark" aria-hidden="true">🔎</span>
+          <span class="intro-door-text">
+            <strong>Enter an address</strong>
+            A postal code, building or road
+          </span>
+        </button>
       </div>
       <p class="intro-fine">
         Your location is only used to rank nearby stops. It is not logged or saved.
+        <span class="intro-credit">Data © LTA, via DataMall</span>
       </p>
     </dialog>
 

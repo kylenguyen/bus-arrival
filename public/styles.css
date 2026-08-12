@@ -244,6 +244,27 @@ dialog#intro {
    surface here is built (.card, .results: token border plus shadow) and costs nothing in
    light mode. */
 
+/* A design that carries an example of the board is taller than a 375×667 phone.
+   The UA sheet already gives `dialog:modal` a max-height and `overflow: auto`, so
+   it scrolls rather than clipping; this restates it against our own padding, stops
+   the gesture chaining to the page behind, and keeps the last line clear of the
+   home indicator.
+
+   `:modal` is deliberate, and is the mirror image of the `:not(:modal)` note at the
+   bottom of this section: the selector is unrecognised on Safari below 15.4, so the
+   rule is dropped in exactly the browsers that take the `.intro-inflow` path — where
+   the dialog renders in flow and the *page* should scroll, not a nested region with
+   no visible affordance on the oldest devices in the fleet. */
+dialog#intro:modal {
+  /* `100vh` on iOS is the large viewport and excludes the collapsing URL bar, which
+     would make the dialog taller than the visible area. `dvh` shipped alongside
+     `showModal` and `:modal` in Safari 15.4, so inside this rule it is guaranteed. */
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: max(1.15rem, env(safe-area-inset-bottom));
+}
+
 dialog::backdrop {
   /* The one raw colour in this file: correct in both schemes, and a token would
      have to be defined twice to say the same thing. */
@@ -262,15 +283,12 @@ dialog::backdrop {
   text-wrap: pretty;
 }
 
-/* The three rules below are scoped by the id, not by class alone, because they
-   have to outrank `#intro p` above — a bare `.intro-sub` loses 1-0-1 to 0-1-0 and
-   the sub-labels would silently render at body size. */
+/* The two rules below are scoped by the id, not by class alone, because they have
+   to outrank `#intro p` above — a bare `.intro-sub` loses 1-0-1 to 0-1-0 and the
+   small print would silently render at body size. */
 
-#intro .intro-q {
-  font-weight: 600;
-}
-
-/* Sub-labels sit under their button, not beside it: at 320 px there is no beside. */
+/* Only `#intro-no-gps` wears this now: the sentence that stands where the
+   location door would have been. */
 #intro .intro-sub {
   margin: 0;
   color: var(--muted);
@@ -280,20 +298,6 @@ dialog::backdrop {
 #intro .intro-fine {
   color: var(--muted);
   font-size: 0.8rem;
-}
-
-/* One column, reading order, so the label always follows the button it describes
-   and a screen reader hears them in that order too. */
-.intro-actions {
-  display: grid;
-  gap: 0.15rem;
-  margin-top: 0.9rem;
-}
-
-.intro-actions button {
-  width: 100%;
-  /* Both classes already carry the 2.75rem thumb target. */
-  margin-top: 0.75rem;
 }
 
 /* No `showModal` (iOS below 15.4): the dialog renders in flow, so it needs its
@@ -306,6 +310,143 @@ dialog::backdrop {
    unrecognised, the rule is dropped, and the fallback gets no margin at all. */
 dialog#intro.intro-inflow {
   margin: 1rem auto;
+}
+
+/* The card carries three decorative glyphs — 🚍 on the band, 📍 and 🔎 on the
+   doors. All three are `aria-hidden`, none is the only thing saying what it sits
+   beside, and none is below 1rem, because at 0.75rem an emoji is a smudge. They
+   render differently across Android and iOS; if one looks muddy on a real phone,
+   the fallback is this file's existing text-glyph idiom (★ ▾ ↻ ×) with the U+FE0E
+   selector, as `.tag-icon` does. */
+
+/* The same eyebrow treatment `.origins-head` gives a list heading: `Example`
+   labels the same kind of thing. */
+#intro .intro-eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#intro .intro-credit {
+  display: block;
+  margin-top: 0.3rem;
+}
+
+/* The sample is the real `.card`, at the real card's size and with none of its
+   rules overridden — the point is that it is not a diagram of the product. All
+   this needs is its own room and the caption above it. */
+.intro-sample {
+  margin-top: 0.9rem;
+}
+
+/* Bleeds to the dialog's edge, so it cancels the dialog's own padding rather than
+   the dialog dropping it and every other child paying it back. The radius matches
+   the padding-box corners it now sits in — one less than `--radius`, because the
+   dialog's 1px border sits outside them. */
+.intro-band {
+  margin: -1.15rem -1.15rem 0;
+  padding: 1.15rem;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  background: var(--accent);
+  /* Never `#fff`: on the dark scheme's lighter accent white measures 2.3:1. */
+  color: var(--on-accent);
+}
+
+.intro-band h2 {
+  color: inherit;
+}
+
+.intro-band-mark {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+/* 0.75rem, not the 0.5rem this started at: two full-width 63 px targets, one of
+   which fires a native permission prompt, need more than 8 px between them for a
+   hurried thumb. It matches the `margin-top: 0.75rem` the button pair used. */
+.intro-doors {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+/* Two equal cards rather than a primary and a ghost: the second door is not a
+   decline, it is the other journey.
+
+   `--muted`, not `--border`, and that is not a taste call. These sit on the
+   dialog, which is `--surface` — the same colour the base `button` rule gives
+   them — and they carry no shadow, so this 1px edge is the only thing saying
+   they are controls at all. At `--border` it measured 1.46:1 in light and 1.40:1
+   in dark against a 3:1 floor (WCAG 1.4.11, non-text contrast). `--muted` is
+   6.38:1 and 6.93:1. The pair this replaced never needed it: the primary door was
+   an accent fill and the ghost sat beside it, so the fill carried the affordance.
+   Do not "tidy" this back to `--border` to match the other cards — those sit on
+   `--bg`, a different colour from their own fill, and this one does not. */
+.intro-door {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.7rem 0.8rem;
+  border-color: var(--muted);
+  text-align: left;
+}
+
+.intro-door:active {
+  background: var(--surface-2);
+}
+
+.intro-door-mark {
+  flex: none;
+  width: 1.8rem;
+  font-size: 1.25rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.intro-door-text {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.intro-door-text strong {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Short screens: the example goes, the doors stay.
+
+   On a 320×568 phone — an iPhone SE 1st gen or a 5s, both of which reach iOS 15.8
+   and so take the `:modal` path — the whole card is 646 px against 536 px of
+   dialog, and what falls off the bottom is the *address door*, caption cut
+   mid-line. That inverts the thing the two-card layout exists to say: the doors
+   are equal journeys, and one of them was asking for a scroll the other did not.
+   Showing the answer is worth a lot, but not the choice itself, so on a screen
+   this short the example is what gives way.
+
+   Height, not width: a 320 px-wide phone with room to spare should keep the
+   example, and a short landscape window should not.
+
+   The limit of this rule, stated rather than hidden: a media query reads the
+   *large* viewport, while `100dvh` above reads the small one. On an iPhone SE 2/3
+   (375×667 layout, ~553 dvh once Safari's chrome is out) the query does not fire,
+   the card stays 596 px, and the second door sits just below the fold until the
+   dialog is scrolled. There is no media feature for the dynamic viewport, so that
+   case is a scroll, not a clip — which is what the `overflow-y` above is for. */
+@media (max-height: 620px) {
+  .intro-sample {
+    display: none;
+  }
 }
 
 /* --- the destinations card --- */
