@@ -222,9 +222,14 @@ button.primary {
 }
 
 /* --- intro dialog ---
-   First visit only. Deliberately plain: no animation, no z-index, no custom
-   close button — the UA gives modality, the focus trap and Escape for free, and
-   every one of those is a thing to get wrong by hand. */
+   First visit only. Deliberately plain: no z-index, no custom close button — the UA gives
+   modality, the focus trap and Escape for free, and every one of those is a thing to get
+   wrong by hand.
+
+   Nothing here animates either, with one exception it is worth being explicit about: the
+   sample card's vehicle mark drifts, because the sample's job is to show the board as the
+   board actually is, and a still copy of a moving mark would be teaching the wrong thing
+   in the one place a rider is looking at an example rather than at a bus. */
 
 dialog#intro {
   /* The UA border and padding, and its max-width, are all wrong for a phone. */
@@ -1008,6 +1013,85 @@ input[type='search']::-webkit-search-cancel-button {
   flex: none;
   height: 0.7rem;
   width: auto;
+}
+
+/* The trails behind every vehicle mark, drifting. Two dashes held still at this size are
+   as easily taken for scuffs on the drawing as for speed; moving, they say the bus is on
+   its way, which is the whole point of putting them there — the mark describes the next
+   arrival, not the route.
+
+   Two things here are load-bearing and neither is obvious:
+
+   The lengths are user units, not screen pixels. A CSS transform on an SVG geometry
+   element resolves in that element's own coordinate space, so `1.4px` is 1.4 of the mark's
+   32-unit drawing space — about half a device pixel at the 0.7rem height set above. Read
+   as CSS pixels these numbers would throw the trails clean off the bus.
+
+   The keyframe begins and ends at the same near-invisible opacity on purpose. `paintBodies`
+   rewrites the card body's innerHTML on every ten-second refresh, which restarts this
+   animation from 0% on every mark at once; ten seconds is not a whole number of 1.6s
+   cycles, so there is always a discontinuity, and the only question is whether it happens
+   where it can be seen. Do not "tidy" the endpoints to full opacity. */
+@keyframes mark-drift {
+  0% {
+    opacity: 0.2;
+    transform: translateX(-1.4px);
+  }
+  40% {
+    opacity: 1;
+    transform: translateX(0.2px);
+  }
+  100% {
+    opacity: 0.2;
+    transform: translateX(1.6px);
+  }
+}
+
+.tag-svg .trail-a,
+.tag-svg .trail-b {
+  animation: mark-drift 1.6s ease-in-out infinite;
+}
+
+.tag-svg .trail-a {
+  animation-delay: var(--mark-phase, 0s);
+}
+
+/* Offset rather than a second keyframe: the near stroke leads and the far one follows,
+   which is what stops the pair reading as one thick dash sliding about. */
+.tag-svg .trail-b {
+  animation-delay: calc(var(--mark-phase, 0s) + 0.22s);
+}
+
+/* Every mark on a board is written into the DOM by the same innerHTML assignment, so
+   left alone they all begin the cycle on the same tick and a card of nine services dims
+   and brightens as one. Measured on a full board that is not nine buses moving, it is the
+   page blinking. Five phases spread across the 1.6s cycle break the unison; neighbours
+   land a fifth of a cycle apart, which is enough that no two adjacent rows read as
+   linked, and a rider is never shown a board with a pulse.
+
+   Negative, so a row starts partway into the cycle rather than sitting still waiting for
+   its turn. On `li` rather than the mark itself because the phase belongs to the row's
+   position in the list, which is the only thing here that varies. */
+.services > li:nth-child(5n + 2) {
+  --mark-phase: -0.32s;
+}
+.services > li:nth-child(5n + 3) {
+  --mark-phase: -0.64s;
+}
+.services > li:nth-child(5n + 4) {
+  --mark-phase: -0.96s;
+}
+.services > li:nth-child(5n + 5) {
+  --mark-phase: -1.28s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-svg .trail-a,
+  .tag-svg .trail-b {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Each arrival stacks its minutes over its own crowding label, so the third

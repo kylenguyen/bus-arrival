@@ -517,39 +517,67 @@ function renderEta(bus, index) {
  * viewport, and a stroke sitting flush on the edge would lose its outer half to the crop.
  *
  * Height is therefore no longer available to say "this one is taller", and the divider
- * carries that alone. Single deckers stay unmarked — absence means "ordinary bus", and a
- * mark on every row would cost the glance more than it pays.
+ * carries that alone — the same drawing rotated: across for a double decker, because the
+ * decks stack; down for a bendy, because the sections hinge. Read side by side that is one
+ * idea told twice, which is why neither needs a legend. A single decker has neither deck
+ * to stack nor section to hinge, so it is the same body with no divider at all, drawn
+ * shorter than the bendy so length keeps separating the two.
+ *
+ * It used to be drawn as nothing, on the argument that absence means "ordinary bus". But
+ * absence is also what a missing `Type` looks like, so the most common vehicle on the
+ * network was saying exactly what no data says. An explicit `SD` now has a shape; a code
+ * we were never sent still has none, which is the honest reading of a blank.
  *
  * Outlines at a hair under 2 units, not solid silhouettes, and no windows. A filled body
  * was tried and carried so much ink that it pulled the glance off the service number it
  * sits under, which is the one thing on the row that has to be read first; drawn open, the
  * mark stays a footnote to it. Window bands went with it — at this size they turned the
  * body into a stack of drawers, and once the divider is doing the work they were only ever
- * texture.
+ * texture. The wheels are filled, small, and the only solid ink in any of the three — an
+ * outlined circle at this size fills in and turns muddy, and they are what stop an empty
+ * rounded box from reading as a container. Three of them is the bendy's other tell.
  *
- * So a single divider is the whole message, and it is the same drawing rotated: across for
- * a double decker, because the decks stack; down for a bendy, because the sections hinge.
- * Read side by side that is one idea told twice, which is why neither needs a legend. The
- * wheels are filled, small, and the only solid ink in either mark — an outlined circle at
- * this size fills in and turns muddy, and they are what stop an empty rounded box from
- * reading as a container. Three of them is the bendy's other tell.
+ * The trailing strokes are the one piece of ink all three share, which is why they read as
+ * a fact about the board rather than about the vehicle. `renderTags` is handed `buses[0]`
+ * and nothing else, so the mark has always described the next arrival — but a silhouette
+ * sitting still under a service number reads as "this route runs double deckers", a fleet
+ * fact, when what is meant is "the one arriving in three minutes is a double decker".
+ * Trails give the bus a direction and put it on its way here. They drift — see
+ * `mark-drift` in the stylesheet — because at 11 px two motionless dashes are as easily
+ * taken for scuffs on the drawing as for speed.
  */
 const VEHICLE = {
   DD: {
     title: 'Double deck',
     label: 'Double deck bus',
-    // Body 1.15–30.85 × 1.15–18.85 once the 1.7 stroke is counted, wheels down to 22.2.
-    box: '0.95 0.95 30.1 21.45',
+    // Body 1.15–30.85 × 1.15–18.85 once the 1.7 stroke is counted, wheels down to 22.2,
+    // trails back to -5.65. Every box shares that left edge; only the right one differs.
+    box: '-5.85 0.95 36.9 21.45',
+    trail: [6.5, 13.5],
     art:
       '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">' +
       '<rect x="2" y="2" width="28" height="16" rx="3.5"/><path d="M2 10h28"/></g>' +
       '<g fill="currentColor"><circle cx="9" cy="20.3" r="1.9"/>' +
       '<circle cx="23" cy="20.3" r="1.9"/></g>',
   },
+  SD: {
+    title: 'Single deck',
+    label: 'Single deck bus',
+    // The bendy's body with the hinge removed and nine units taken off the length, so at
+    // one CSS height it comes out the shorter of the two rather than merely the plainer.
+    box: '-5.85 5.45 28.4 16.85',
+    trail: [9.5, 15],
+    art:
+      '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">' +
+      '<rect x="1.5" y="6.5" width="20" height="11.5" rx="3"/></g>' +
+      '<g fill="currentColor"><circle cx="6" cy="20.3" r="1.8"/>' +
+      '<circle cx="17" cy="20.3" r="1.8"/></g>',
+  },
   BD: {
     title: 'Bendy bus',
     label: 'Bendy bus',
-    box: '0.45 5.45 31.1 16.85',
+    box: '-5.85 5.45 37.4 16.85',
+    trail: [9.5, 15],
     art:
       '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">' +
       '<rect x="1.5" y="6.5" width="29" height="11.5" rx="3"/><path d="M15.5 6.5v11.5"/></g>' +
@@ -558,12 +586,27 @@ const VEHICLE = {
   },
 };
 
+/**
+ * The two strokes trailing a mark. Identical for all three vehicles but for the y pair,
+ * which each one supplies from inside its own body so the trails sit in the band the bus
+ * occupies rather than floating above or below it. Round caps, which is why the leftmost
+ * ink lands at -5.65 and every box above crops to -5.85: the same 0.2 of padding the
+ * bodies get, for the same reason.
+ */
+function trail([upper, lower]) {
+  return (
+    '<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">' +
+    `<path class="trail-a" d="M-4.8 ${upper}H-1.6"/>` +
+    `<path class="trail-b" d="M-3.4 ${lower}H-1.6"/></g>`
+  );
+}
+
 /** The tag markup for one vehicle silhouette. Shared with the intro dialog's sample card. */
-function vehicleIcon({ title, label, box, art }) {
+function vehicleIcon({ title, label, box, trail: pair, art }) {
   return (
     `<span class="tag-icon" title="${title}" aria-label="${label}">` +
     `<svg class="tag-svg" viewBox="${box}" fill="currentColor" aria-hidden="true" focusable="false">` +
-    `${art}</svg></span>`
+    `${trail(pair)}${art}</svg></span>`
   );
 }
 
@@ -571,8 +614,8 @@ function vehicleIcon({ title, label, box, art }) {
 function renderTags(bus) {
   if (!bus) return '';
   const tags = [];
-  // An unrecognised code from upstream simply matches nothing and draws nothing, which is
-  // the same silence a single decker gets.
+  // An unrecognised code from upstream, or none at all, simply matches nothing and draws
+  // nothing. That silence used to be a single decker's too and is now its own answer.
   const vehicle = VEHICLE[bus.type];
   if (vehicle) tags.push(vehicleIcon(vehicle));
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';
