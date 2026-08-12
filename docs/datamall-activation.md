@@ -301,7 +301,7 @@ rather than the code changed — see task 5's verify item 2 and A9.
 kubectl create secret generic lta-datamall --from-literal=accountKey='...'
 kubectl rollout restart deployment/bus-arrival
 kubectl logs -l app=bus-arrival --tail=50        # expect the real stop count, no [MOCK MODE]
-curl -s https://bus.kylen.dev/healthz            # ok:true, mock:false, ~5000 stops
+curl -s https://ezbus.sg/healthz                 # ok:true, mock:false, ~5000 stops
 ```
 
 Then drop `optional: true` from the `secretKeyRef`
@@ -461,7 +461,7 @@ countdown suppressed while a healthy card beside it keeps ticking.
 ## A5. Per-IP token bucket
 
 `/api/arrivals` and `/api/board` are unauthenticated and reachable at
-`bus.kylen.dev`. A four-line shell loop drains the quota. A1 bounds account
+`ezbus.sg`. A four-line shell loop drains the quota. A1 bounds account
 damage; this stops one caller starving everyone else.
 
 Deferred on the reasoning that during the small-user phase the breaker is the

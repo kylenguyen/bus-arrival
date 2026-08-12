@@ -135,10 +135,11 @@ spec:
             name: bus-arrival-svc
             port:
               number: 80
-  # Public route via the tunnel. Requires bus.kylen.dev (or a wildcard
-  # *.kylen.dev) as a CNAME to it; harmless on a local cluster, where nothing
-  # ever sends that Host header.
-  - host: bus.kylen.dev
+  # Public route via the tunnel. Requires ezbus.sg as a CNAME to it — an apex
+  # CNAME, so it depends on Cloudflare's flattening; harmless on a local
+  # cluster, where nothing ever sends that Host header. Apex only: www.ezbus.sg
+  # is not served here and needs a redirect at the Cloudflare edge if wanted.
+  - host: ezbus.sg
     http:
       paths:
       - path: /
