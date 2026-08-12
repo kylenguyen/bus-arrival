@@ -326,6 +326,15 @@ dialog#intro.intro-inflow {
   padding: 0;
 }
 
+/* One line per destination, so the control that re-runs a fix can sit beside the row
+   it belongs to rather than under it. Rows without that second button are unaffected:
+   a lone `.origin-row` takes the whole line either way. */
+.origins li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .origins li + li {
   border-top: 1px solid var(--border);
 }
@@ -336,6 +345,13 @@ dialog#intro.intro-inflow {
 .origin-row {
   display: block;
   width: 100%;
+  /* Takes the rest of the line. `flex-basis: 0` is what stops the `width: 100%` above
+     claiming the whole `<li>` and pushing `.origin-update` off the end, and
+     `min-width: 0` overrides a flex item's default `min-width: auto` so a long recent
+     address ellipsises instead of widening the list and scrolling the page sideways —
+     the same pair, for the same reason, as `#origin-chip`. */
+  flex: 1;
+  min-width: 0;
   min-height: 2.75rem;
   padding: 0.5rem 0.6rem;
   border: 0;
@@ -383,15 +399,21 @@ dialog#intro.intro-inflow {
   font-weight: 400;
 }
 
-/* The one control that re-runs a location fix, inside the row it belongs to and
-   below it rather than beside it: at 320 px there is no beside, and the row's own
-   text is what it would be competing with.
+/* The one control that re-runs a location fix, inside the row it belongs to and on the
+   right of it. Below the row is what this replaced: stacked under a two-word row it read
+   as a separate list item with a wide empty gutter beside it.
 
-   Only the margin: `button.ghost` already carries the thumb target, the padding and
-   the nowrap, and it outranks a bare class selector — so restating them here would
-   read as setting values that lose. */
+   There is a beside here because of which row it appears on. `showUpdate` is true only on
+   a current `gps` row, whose `primary` is always the literal `Near you` and whose `detail`
+   is empty — ~85 px of text against this button's ~150 px, inside ~267 px at 320 px wide.
+   The row's `min-width: 0` covers the rest: it shrinks rather than shoving this off screen.
+
+   No box of its own: `button.ghost` already carries the thumb target, the padding and the
+   nowrap, and it outranks a bare class selector — so restating them here would read as
+   setting values that lose. */
 .origin-update {
-  margin: 0.15rem 0 0.35rem 0.6rem;
+  flex: none;
+  margin: 0;
 }
 
 /* Separates the list from the way to add to it. No "or" label: the heading above

@@ -158,7 +158,7 @@ Rules worth naming: the gps row is **omitted** when geolocation cannot work rath
 | `#intro-code-sub` | `A postal code, building or road` |
 | `#origins-head` | `Show stops near` |
 | gps row / its `detail` | `Near you` / `Uses your device location` |
-| `CURRENT_STATUS` / `.origin-update` | `Showing now` / `↻ Update my location` |
+| `CURRENT_STATUS` / `.origin-update` | `Showing now` / `↻ Refresh location` |
 | `#search` placeholder / `<label>` | `Search postal code or place` / `Search for an address or postal code` |
 | `#finder-hint` | `Postal code, building or road name` |
 | `COMMIT_HINT` | `Enter a 6-digit postal code, or at least two letters.` |

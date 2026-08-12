@@ -904,9 +904,10 @@ function renderOrigins() {
       const detail = row.detail ? `<span class="origin-detail">${escape(row.detail)}</span>` : '';
       const status = row.status ? `<span class="origin-status">${escape(row.status)}</span>` : '';
       // The update control is a second button inside the row's `<li>`, not inside
-      // the row's own button: a button cannot contain a button.
+      // the row's own button: a button cannot contain a button. The `<li>` is the flex
+      // line that puts it on the right of the row rather than under it.
       const update = row.showUpdate
-        ? `<button type="button" class="ghost origin-update" data-update="1">↻ Update my location</button>`
+        ? `<button type="button" class="ghost origin-update" data-update="1">↻ Refresh location</button>`
         : '';
       return `
         <li>
