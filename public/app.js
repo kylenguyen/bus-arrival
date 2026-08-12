@@ -512,20 +512,20 @@ function renderEta(bus, index) {
  *
  * Each carries a viewBox cropped to its own artwork rather than a shared one. Drawn on a
  * common box the tall bus filled more of it than the low bendy, so a single CSS height
- * came out 20% taller for one than the other and neither matched the wheelchair glyph
- * beside them. Cropped, one height makes every mark's ink exactly equal — which is why
- * the box below is padded a touch: an SVG clips to its viewport, and a stroke sitting flush
- * on the edge would lose its outer half to the crop.
+ * came out 20% taller for one than the other. Cropped, one height makes both marks' ink
+ * exactly equal — which is why the box below is padded a touch: an SVG clips to its
+ * viewport, and a stroke sitting flush on the edge would lose its outer half to the crop.
  *
  * Height is therefore no longer available to say "this one is taller", and the divider
  * carries that alone. Single deckers stay unmarked — absence means "ordinary bus", and a
  * mark on every row would cost the glance more than it pays.
  *
  * Outlines at a hair under 2 units, not solid silhouettes, and no windows. A filled body
- * was tried and carried far more ink than the wheelchair glyph it stands beside, which put
- * the vehicle ahead of the access mark in the glance; drawn open, the two weigh the same.
- * Window bands went with it — at this size they turned the body into a stack of drawers,
- * and once the divider is doing the work they were only ever texture.
+ * was tried and carried so much ink that it pulled the glance off the service number it
+ * sits under, which is the one thing on the row that has to be read first; drawn open, the
+ * mark stays a footnote to it. Window bands went with it — at this size they turned the
+ * body into a stack of drawers, and once the divider is doing the work they were only ever
+ * texture.
  *
  * So a single divider is the whole message, and it is the same drawing rotated: across for
  * a double decker, because the decks stack; down for a bendy, because the sections hinge.
@@ -575,15 +575,6 @@ function renderTags(bus) {
   // the same silence a single decker gets.
   const vehicle = VEHICLE[bus.type];
   if (vehicle) tags.push(vehicleIcon(vehicle));
-  if (bus.wheelchairAccessible) {
-    // U+267F followed by U+FE0E, the text-presentation selector: as an emoji this is
-    // a saturated blue tile that out-contrasts the service number next to it, which
-    // is not what should win the glance. A platform is free to ignore the selector
-    // and render the emoji anyway, so it is a preference rather than a guarantee.
-    tags.push(
-      '<span class="tag-icon" title="Wheelchair accessible" aria-label="Wheelchair accessible">♿︎</span>',
-    );
-  }
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';
 }
 

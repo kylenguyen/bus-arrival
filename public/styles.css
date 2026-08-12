@@ -317,7 +317,7 @@ dialog#intro.intro-inflow {
    beside, and none is below 1rem, because at 0.75rem an emoji is a smudge. They
    render differently across Android and iOS; if one looks muddy on a real phone,
    the fallback is this file's existing text-glyph idiom (★ ▾ ↻ ×) with the U+FE0E
-   selector, as `.tag-icon` does. */
+   selector. */
 
 /* The same eyebrow treatment `.origins-head` gives a list heading: `Example`
    labels the same kind of thing. */
@@ -965,18 +965,17 @@ input[type='search']::-webkit-search-cancel-button {
 .service-tags {
   display: flex;
   flex-wrap: wrap;
-  /* Centred, not stretched. These marks are different kinds of object — a text glyph and
-     two SVGs — and left to `stretch` the glyph hangs from its own baseline while the
-     drawings fill from the top, so they sat on visibly different lines. */
+  /* Centred, not stretched: the drawings have no baseline of their own, and left to
+     `stretch` they fill the row's height instead of holding the size set below. */
   align-items: center;
   gap: 0.2rem;
   margin-top: 0.2rem;
 }
 
-/* Every tag under a service number is a mark now — two vehicle silhouettes and the
-   wheelchair glyph — so there is no bordered lettered tag left for them to sit against,
-   and no border of their own: each carries its own shape, and a box round it would only
-   cost width the service column does not have on a 320 px phone.
+/* Every tag under a service number is a mark now — the two vehicle silhouettes — so there
+   is no bordered lettered tag left for them to sit against, and no border of their own:
+   each carries its own shape, and a box round it would only cost width the service column
+   does not have on a 320 px phone.
 
    --muted, and it has to stay that way. This card runs exactly two colour families, each
    answering one rider question: --accent for "when does it come", --seats/--standing/
@@ -984,33 +983,23 @@ input[type='search']::-webkit-search-cancel-button {
    grey and stays out of both. */
 .tag-icon {
   /* One shared box, so every mark is the same height and sits on the same line whatever
-     it is made of. The glyph is centred inside it rather than sitting on a baseline;
-     without the flex it would align to the text line and drift out of step with the SVGs
-     that have no baseline at all. */
+     it is made of. The drawing is centred inside it rather than aligned to the text line
+     it sits beneath, which it has no baseline to meet. */
   display: flex;
   align-items: center;
   height: 0.95rem;
   line-height: 1;
-  /* Governs the wheelchair glyph alone — the drawings have no text node to scale and size
-     themselves below. The emoji presentation of U+267F is a saturated blue tile that
-     out-contrasts the service number beside it, which is the wrong thing to win the
-     glance; U+FE0E in the markup asks for the text presentation, and where a platform
-     ignores that (likely on iOS) the colour form returns, so it is a preference rather
-     than a guarantee. */
-  font-size: 1.05rem;
   color: var(--muted);
 }
 
-/* Matched to the ink height of the wheelchair glyph beside it, not to a round number, so
-   the three marks read as one row of equals. Both drawings are open outlines at the same
-   stroke weight as that glyph, so equal height now means equal weight too — when they were
-   filled they had to be shrunk to stop them out-shouting it. Width follows the 32 : 24
-   viewBox so the art fills its box instead of letterboxing inside it.
+/* An ink height, not a round number: the two drawings are open outlines at one stroke
+   weight, so an equal height makes them equal weight too — when they were filled they had
+   to be shrunk to stop them out-shouting the service number above.
 
    Height is set and width is left to follow each viewBox's own ratio: the two drawings are
    cropped to their own artwork and so have different proportions, the bendy being the long
    one. `flex: none` because these are flex items and would otherwise be allowed to shrink
-   below that intrinsic width when a service carries both a vehicle mark and the wheelchair.
+   below that intrinsic width.
 
    The floor is the drawing, not the type scale: much below this the divider closes up
    against the body and a double decker stops being distinguishable from a bendy. */
