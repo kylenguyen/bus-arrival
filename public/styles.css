@@ -347,6 +347,9 @@ dialog#intro.intro-inflow {
    the padding-box corners it now sits in — one less than `--radius`, because the
    dialog's 1px border sits outside them. */
 .intro-band {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin: -1.15rem -1.15rem 0;
   padding: 1.15rem;
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
@@ -359,9 +362,12 @@ dialog#intro.intro-inflow {
   color: inherit;
 }
 
+/* Beside the heading, not above it. `flex: none` so it keeps its size when the
+   heading wraps to two lines at 320 px, and `align-items: center` on the band
+   then centres it against both lines rather than leaving it stranded by the
+   first. */
 .intro-band-mark {
-  display: block;
-  margin-bottom: 0.35rem;
+  flex: none;
   font-size: 1.6rem;
   line-height: 1;
 }
