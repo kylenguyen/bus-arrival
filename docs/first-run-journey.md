@@ -7,7 +7,10 @@
 > longer exist. Read *Superseded — `#use-location` and the two-door panel* before
 > trusting any `#finder` markup, CSS or `openSearch`/`closeSearch` detail here. The
 > two doors, `decideBoot`, the intro dialog and the transient-activation rule are
-> all still current.
+> all still current. The colour tokens have since been replaced wholesale, so any hex
+> value quoted below is historical — `styles.css` is the only source of truth for those.
+> The dialog did get the `border: 1px solid var(--border)` this document floats as a
+> maybe, and it is now load-bearing.
 
 ## Context
 

@@ -247,7 +247,7 @@ before the image build. Everything else, verify by running it:
    rows in the destinations card rather than contents of the search box.
 
    The card itself is worth opening in both colour schemes: in dark mode
-   `--shadow` is `none`, so its token border is the only edge it has. Check that
+   `--shadow` draws nothing, so its token border is the only edge it has. Check that
    opening it from the chip leaves the first board card on screen, that focus lands
    on the list rather than in the box (a keyboard over the rows defeats the point),
    and that nothing in it draws a ✓.

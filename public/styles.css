@@ -1,18 +1,27 @@
 /* Mobile first. Nearly everyone opens this at a bus stop, on a phone, in a
    hurry — so the phone layout is the base and the wide screen is the override. */
 
+/* Two colour families, because a rider asks two independent questions: "when does it
+   come" and "can I get on". `--accent` answers the first and owns every interactive
+   affordance; `--seats`/`--standing`/`--limited` answer the second and are used nowhere
+   else. They used to collide — `--accent` and `--limited` were the same red, so an
+   arriving bus, a pinned stop, the focus ring and a crowded bus all looked alike. */
 :root {
-  --bg: #f4f5f7;
+  --bg: #eef1f5;
   --surface: #ffffff;
-  --surface-2: #eceef1;
-  --border: #dcdfe4;
-  --text: #16191d;
-  --muted: #656d78;
-  --accent: #b4232b;
-  --seats: #1c7c4a;
-  --standing: #a76a06;
-  --limited: #b4232b;
-  --shadow: 0 1px 2px rgb(16 19 29 / 0.06), 0 4px 12px rgb(16 19 29 / 0.04);
+  --surface-2: #e2e7ee;
+  --border: #cfd6e0;
+  --text: #11161c;
+  --muted: #56606e;
+  --accent: #14459b;
+  /* The label on a filled `--accent`. A token and not `#fff`, because in dark mode the
+     accent is light enough that white on it measures 2.3:1 — which is what shipped, and
+     what a hard-coded white cannot warn you about. */
+  --on-accent: #ffffff;
+  --seats: #0d6c37;
+  --standing: #8a5300;
+  --limited: #b3211b;
+  --shadow: 0 1px 2px rgb(11 17 28 / 0.06), 0 4px 12px rgb(11 17 28 / 0.05);
   --radius: 12px;
 
   /* Gutters follow the notch/home indicator on phones. */
@@ -28,17 +37,24 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101215;
-    --surface: #191c21;
-    --surface-2: #22262c;
-    --border: #2c3138;
-    --text: #e9ebee;
-    --muted: #98a1ad;
-    --accent: #ff6b6b;
-    --seats: #4ec98a;
-    --standing: #e0a63c;
-    --limited: #ff6b6b;
-    --shadow: none;
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #212832;
+    --border: #2d3542;
+    --text: #e8ecf2;
+    --muted: #9aa5b4;
+    --accent: #78aeff;
+    /* Near-black, not white: on an accent this light, white lands at 2.3:1. */
+    --on-accent: #0d1117;
+    --seats: #45cf8b;
+    --standing: #e2a53a;
+    --limited: #ff7a72;
+    /* No visible shadow in dark — `--border` is the only edge a raised surface gets, and
+       every one of them must carry it. Written as a transparent shadow rather than `none`
+       so the token stays composable: `none` inside a `box-shadow` list is invalid and
+       drops the whole declaration, which would silently delete `.card.pinned`'s inset bar
+       in dark mode only. Do not "tidy" this back to `none`. */
+    --shadow: 0 0 0 0 rgb(0 0 0 / 0);
   }
 }
 
@@ -176,7 +192,7 @@ button.primary {
   padding: 0.65rem 1.2rem;
   border-color: transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -222,11 +238,11 @@ dialog#intro {
   max-width: min(26rem, calc(100vw - 2rem));
 }
 
-/* The border above is not decoration. `--shadow` is `none` in dark mode, so
-   without it the only thing separating --surface (#191c21) from the dimmed page
-   behind it is the 45% backdrop — a ~9% luminance step, which reads as no edge
-   at all. It matches how every other raised surface here is built (.card,
-   .results: token border plus shadow) and costs nothing in light mode. */
+/* The border above is not decoration. `--shadow` draws nothing in dark mode, so without it
+   the only thing separating --surface from the dimmed page behind it is the 45% backdrop —
+   a ~9% luminance step, which reads as no edge at all. It matches how every other raised
+   surface here is built (.card, .results: token border plus shadow) and costs nothing in
+   light mode. */
 
 dialog::backdrop {
   /* The one raw colour in this file: correct in both schemes, and a token would
@@ -296,8 +312,8 @@ dialog#intro.intro-inflow {
 
 /* A raised surface, like `.card` and `.results`: choosing where the board is
    ranked from is a mode, and it used to float on the page background with nothing
-   to say where it began or ended. The border is not decoration — `--shadow` is
-   `none` in dark mode, where it is the only edge the card has (same reasoning as
+   to say where it began or ended. The border is not decoration — `--shadow` draws
+   nothing in dark mode, where it is the only edge the card has (same reasoning as
    `dialog#intro`). */
 .finder {
   position: relative;
@@ -577,8 +593,14 @@ input[type='search']::-webkit-search-cancel-button {
   overflow: hidden;
 }
 
+/* The 1px accent border on its own was easy to miss on a board of eight cards, so the
+   marker is the same 3px leading bar `.origin-row[aria-current]` uses — the two "this is
+   the one you chose" states now read as one idea. Inset, so it costs the card no width and
+   survives its own `overflow: hidden`. `--shadow` must stay composable for this (see the
+   dark block); a bare `none` there would drop this declaration entirely. */
 .card.pinned {
   border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
 }
 
 /* --- skeleton ---
@@ -870,8 +892,11 @@ input[type='search']::-webkit-search-cancel-button {
   font-weight: 400;
 }
 
+/* The one number being acted on. Weight as well as colour, so the state does not rest on
+   hue alone — 650 is what every other arrival already is. */
 .eta.arriving .eta-value {
   color: var(--accent);
+  font-weight: 700;
 }
 
 /* Scheduled, not live-tracked: still shown, visibly less certain. Not fainter than
@@ -898,6 +923,42 @@ input[type='search']::-webkit-search-cancel-button {
 
 .load-lsd {
   color: var(--limited);
+}
+
+/* Crowding gets a tinted pill rather than bare coloured text: at 0.72rem it was the
+   weakest colour signal on the card, and it is the answer to half the question the rider
+   came with. Only the lead column ever carries a label (see `renderEta`), so this is one
+   pill per row, not three.
+
+   The fill is mixed from the same three tokens, so the scale stays one source of truth and
+   dark mode needs no second set of backgrounds. Label text lands at 4.98:1 or better on its
+   own pill in both schemes.
+
+   The padding is inside the @supports with the fill, not outside it: `color-mix` shipped in
+   Safari 16.2 and this file still carries iOS 15 fallbacks, so on an older phone the fill
+   and the padding have to disappear together — padding on a transparent pill would shift the
+   label off the number it belongs to. What those phones get is exactly the coloured text
+   this replaced. */
+@supports (background: color-mix(in srgb, red 16%, white)) {
+  .load-sea,
+  .load-sda,
+  .load-lsd {
+    margin-top: 0.1rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+  }
+
+  .load-sea {
+    background: color-mix(in srgb, var(--seats) 16%, var(--surface));
+  }
+
+  .load-sda {
+    background: color-mix(in srgb, var(--standing) 16%, var(--surface));
+  }
+
+  .load-lsd {
+    background: color-mix(in srgb, var(--limited) 16%, var(--surface));
+  }
 }
 
 .card-msg {
