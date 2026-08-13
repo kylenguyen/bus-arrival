@@ -1,28 +1,78 @@
 /* Mobile first. Nearly everyone opens this at a bus stop, on a phone, in a
    hurry — so the phone layout is the base and the wide screen is the override. */
 
-/* Two colour families, because a rider asks two independent questions: "when does it
+/* Archivo Narrow 700, SIL Open Font License 1.1, self-hosted rather than linked: a
+   font CDN is a second DNS lookup and a second TLS handshake on the 4G of a bus
+   shelter, which is exactly where this page is opened.
+   11.9 KB — the Latin subset only, and only the one weight that gets used.
+
+   `font-display: swap` and not `optional`: the numerals this sets are the largest
+   things on the card, and a first visit that never swapped would leave the stop code
+   and the service number in the fallback for the whole session. A swap is one reflow
+   in a column whose row heights are set by the ETA beside it, which is not on this
+   face — so nothing below the swapping glyph moves.
+
+   The `unicode-range` is the one Google Fonts ships this subset under. It is declared
+   rather than omitted so a character outside it (an en dash, a stray non-Latin road
+   name) falls back to the system stack instead of rendering as .notdef. */
+@font-face {
+  font-family: 'Archivo Narrow';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/archivo-narrow-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* --- Void Deck ---
+   The palette comes off an HDB estate: pale concrete underfoot, the turquoise mosaic
+   tile that lines a void deck's pillars, and stencilled block numerals. What makes it
+   local is the ground and the numerals, not a flag — so `--bg` is a concrete grey with
+   a deliberate green bias rather than the neutral it would default to.
+
+   Two colour families, because a rider asks two independent questions: "when does it
    come" and "can I get on". `--accent` answers the first and owns every interactive
    affordance; `--seats`/`--standing`/`--limited` answer the second and are used nowhere
    else. They used to collide — `--accent` and `--limited` were the same red, so an
-   arriving bus, a pinned stop, the focus ring and a crowded bus all looked alike. */
+   arriving bus, a pinned stop, the focus ring and a crowded bus all looked alike.
+
+   That rule is why the accent here is the mosaic turquoise and not the void deck's other
+   signature colour, gate green: green is `--seats`, and a big accent-green "3 min" with a
+   small green "Seats" pill directly under it is the same collision wearing a new colour.
+   The two families are ~37° apart in hue and the crowding family is the only one that is
+   ever a filled pill, so the pair stay separable at a glance. */
 :root {
-  --bg: #eef1f5;
+  --bg: #e7ebe7;
   --surface: #ffffff;
-  --surface-2: #e2e7ee;
-  --border: #cfd6e0;
-  --text: #11161c;
-  --muted: #56606e;
-  --accent: #14459b;
+  --surface-2: #dce4de;
+  --border: #c4d0c8;
+  --text: #16201b;
+  --muted: #54625b;
+  --accent: #0a6a72;
   /* The label on a filled `--accent`. A token and not `#fff`, because in dark mode the
-     accent is light enough that white on it measures 2.3:1 — which is what shipped, and
+     accent is light enough that white on it measures 2.0:1 — which is what shipped, and
      what a hard-coded white cannot warn you about. */
   --on-accent: #ffffff;
   --seats: #0d6c37;
   --standing: #8a5300;
   --limited: #b3211b;
-  --shadow: 0 1px 2px rgb(11 17 28 / 0.06), 0 4px 12px rgb(11 17 28 / 0.05);
-  --radius: 12px;
+  --shadow: 0 1px 2px rgb(16 32 26 / 0.07), 0 4px 12px rgb(16 32 26 / 0.06);
+  /* 4px, not 12px. A void deck is drawn with a set square: block numbers, tile courses
+     and kerb lines are all right angles, and a soft radius is the one thing that would
+     make this read as a generic app wearing an estate palette. Every hand-written radius
+     further down this file was squared to match — see `.origin-row`, `.pin`, `.meta-dist`
+     and the crowding pills. */
+  --radius: 4px;
+
+  /* The stencil face, used only where a number is being matched against something
+     physical: the code on the pole, and the service on the front of the bus. Everything
+     else stays on the system stack, which is better at 11px than any webfont. */
+  --display: 'Archivo Narrow', 'Avenir Next Condensed', 'Roboto Condensed', 'Arial Narrow',
+    var(--sans);
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
 
   /* Gutters follow the notch/home indicator on phones. */
   --gutter: 0.85rem;
@@ -35,17 +85,19 @@
   --col-gap: 0.5rem;
 }
 
+/* The same void deck after dark: fluorescent tube on concrete, so the ground keeps its
+   green bias rather than going to the neutral charcoal every dark theme defaults to. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --surface-2: #212832;
-    --border: #2d3542;
-    --text: #e8ecf2;
-    --muted: #9aa5b4;
-    --accent: #78aeff;
-    /* Near-black, not white: on an accent this light, white lands at 2.3:1. */
-    --on-accent: #0d1117;
+    --bg: #121715;
+    --surface: #1b2220;
+    --surface-2: #242d2a;
+    --border: #2e3835;
+    --text: #e3eae5;
+    --muted: #93a29a;
+    --accent: #47cbdb;
+    /* Near-black, not white: on an accent this light, white lands at 2.0:1. */
+    --on-accent: #08161a;
     --seats: #45cf8b;
     --standing: #e2a53a;
     --limited: #ff7a72;
@@ -84,8 +136,7 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    sans-serif;
+  font-family: var(--sans);
   font-size: 16px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
@@ -132,10 +183,27 @@ main {
   text-overflow: ellipsis;
 }
 
+/* The wordmark. Set in the stencil face, lowercase, tight — the product is called ezbus
+   and until now the name appeared nowhere in it. Lowercase because the domain is the
+   brand and `ezbus.sg` is how anyone arrives here.
+
+   `flex: none` for the same reason `#origin-chip` gets `min-width: 0`: they share a
+   360px row and only one of the two is allowed to give way, and it is not this one. */
 h1 {
   margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: -0.02em;
+  flex: none;
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.1;
+}
+
+/* The turquoise sits on the mark itself rather than on a filled band: at the top of a
+   working board a full-width accent bar is a lot of colour spent on something the
+   returning user has already read a thousand times. */
+h1 .mark-ez {
+  color: var(--accent);
 }
 
 .tagline {
@@ -351,15 +419,19 @@ dialog#intro.intro-inflow {
    the dialog dropping it and every other child paying it back. The radius matches
    the padding-box corners it now sits in — one less than `--radius`, because the
    dialog's 1px border sits outside them. */
+/* The vertical padding comes down from 1.15rem to 1rem to pay for the wordmark line
+   added inside it. The negative margin must stay at the dialog's own 1.15rem whatever
+   the padding does — that is what cancels it, and the two are not the same number any
+   more. */
 .intro-band {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.7rem;
   margin: -1.15rem -1.15rem 0;
-  padding: 1.15rem;
+  padding: 1rem 1.15rem;
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
   background: var(--accent);
-  /* Never `#fff`: on the dark scheme's lighter accent white measures 2.3:1. */
+  /* Never `#fff`: on the dark scheme's lighter accent white measures 2.0:1. */
   color: var(--on-accent);
 }
 
@@ -367,14 +439,44 @@ dialog#intro.intro-inflow {
   color: inherit;
 }
 
+.intro-band-text {
+  min-width: 0;
+}
+
+/* Scoped by the id for the same reason `.intro-sub` and `.intro-fine` are: a bare class
+   loses 0-1-0 to `#intro p`'s 1-0-1 and this would silently render at body size with
+   0.6rem of margin above it. */
+#intro .intro-band-name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  /* Not a second colour: `--on-accent` held back, so the name reads as the label on the
+     band and the promise under it stays the line being read. Both sit on the same fill,
+     and at 0.82 this is still 4.9:1 in light and 6.1:1 in dark. */
+  opacity: 0.82;
+}
+
 /* Beside the heading, not above it. `flex: none` so it keeps its size when the
    heading wraps to two lines at 320 px, and `align-items: center` on the band
    then centres it against both lines rather than leaving it stranded by the
-   first. */
+   first.
+
+   A drawn mark now rather than an emoji, sized in rem so it tracks the text beside it.
+   It takes `currentColor` from the band, which is `--on-accent` — so it is the one
+   piece of this identity that cannot be rendered wrong by the platform. */
 .intro-band-mark {
   flex: none;
-  font-size: 1.6rem;
-  line-height: 1;
+  width: 2.2rem;
+  line-height: 0;
+}
+
+.intro-band-mark svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 /* 0.75rem, not the 0.5rem this started at: two full-width 63 px targets, one of
@@ -523,7 +625,7 @@ dialog#intro.intro-inflow {
   min-height: 2.75rem;
   padding: 0.5rem 0.6rem;
   border: 0;
-  border-radius: 8px;
+  border-radius: 3px;
   background: none;
   text-align: left;
 }
@@ -554,7 +656,7 @@ dialog#intro.intro-inflow {
 .origin-row[aria-current='true'] {
   /* The left edge replaces the border-radius on that side, so the accent reads as
      a marker on the list rather than as a selected pill. */
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 3px 3px 0;
   border-left: 3px solid var(--accent);
   padding-left: calc(0.6rem - 3px);
   font-weight: 600;
@@ -642,7 +744,7 @@ input[type='search']::-webkit-search-cancel-button {
   height: 2.75rem;
   padding: 0;
   border-color: transparent;
-  border-radius: 10px;
+  border-radius: 4px;
   background: none;
   color: var(--muted);
   font-size: 1.35rem;
@@ -695,7 +797,7 @@ input[type='search']::-webkit-search-cancel-button {
 .result-row {
   min-height: 2.75rem;
   padding: 0.6rem 0.7rem;
-  border-radius: 8px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
@@ -755,6 +857,14 @@ input[type='search']::-webkit-search-cancel-button {
   box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
 }
 
+/* The head carries its own fill now, and a child's background paints over the parent's
+   inset shadow — so without this the marker bar ran only beside the arrivals and stopped
+   dead at the head, which read as a rendering fault rather than as a marker. Same three
+   pixels, same token, restated on the element that covers them. */
+.card.pinned .card-head {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 /* --- skeleton ---
    What a wait looks like: the board's shape, at the board's size, so the answer
    appears to be arriving rather than the page appearing to be empty. Bars only —
@@ -763,26 +873,43 @@ input[type='search']::-webkit-search-cancel-button {
 
 .sk {
   display: block;
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--surface-2);
+}
+
+/* The head is `--surface-2` itself now, so a bar filled with it is invisible — the three
+   placeholder lines vanished and the card read as a blank plate with rows under it.
+   `--border` is the next step up the same ramp and is what the row dividers already use,
+   so the head's bars and the body's stay one family. */
+.skeleton .card-head .sk {
+  background: var(--border);
 }
 
 .skeleton .card-head {
   /* No pin button on a placeholder, so the head needs its own height or it
-     collapses to the two bars and the card reads shorter than a real one. */
+     collapses to the bars and the card reads shorter than a real one. */
   min-height: 2.75rem;
   align-items: center;
 }
 
+/* Three bars now, not two: the head grew a stencilled code above the name, and a
+   placeholder that skipped it would let the board jump a line as each card resolves.
+   The heights are the real elements' — 1.5rem code, 0.95rem name, 0.78rem sub. */
+.sk-code {
+  width: 32%;
+  height: 1.5rem;
+}
+
 .sk-name {
   width: 55%;
-  height: 1rem;
+  height: 0.95rem;
+  margin-top: 0.35rem;
 }
 
 .sk-sub {
   width: 38%;
-  height: 0.7rem;
-  margin-top: 0.4rem;
+  height: 0.78rem;
+  margin-top: 0.3rem;
 }
 
 /* Padding and bar height are set to land near a real service row's height, so the
@@ -830,12 +957,17 @@ input[type='search']::-webkit-search-cancel-button {
   }
 }
 
+/* The head is filled rather than left on `--surface`, so each card reads as a painted
+   plate with its number at the top — the object on the pole, not a row in a table. It is
+   also what gives the stencilled code something to sit on without needing a box of its
+   own. `.card`'s `overflow: hidden` clips the fill to the 4px corners. */
 .card-head {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.7rem 0.8rem;
+  padding: 0.6rem 0.8rem 0.65rem;
   border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 .card-title {
@@ -843,16 +975,37 @@ input[type='search']::-webkit-search-cancel-button {
   min-width: 0;
 }
 
+/* The code leads now, and the description follows it. That is an inversion of what
+   shipped, and the argument for it is the shelter: a rider standing at a pole is
+   matching a five-digit number printed on it, and "Opp Blk 123" is how the stop is
+   described afterwards rather than how it is identified. On a board of eight cards the
+   number is also the only field guaranteed unique — two stops on the same road routinely
+   share a description.
+
+   `line-height: 1` and a hair of positive tracking: this is the one place the stencil
+   face is set large, and at 1.5rem Archivo Narrow's default leading opens a gap between
+   the number and the name that reads as two separate blocks. */
+.meta-code {
+  display: block;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
 .card-name {
   display: block;
+  margin-top: 0.1rem;
   font-weight: 650;
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
-/* Code, road and walking distance wrap onto as many lines as the phone needs
-   rather than being truncated to one. */
+/* Road and walking distance wrap onto as many lines as the phone needs rather than
+   being truncated to one. */
 .card-sub {
   display: flex;
   flex-wrap: wrap;
@@ -868,17 +1021,16 @@ input[type='search']::-webkit-search-cancel-button {
   min-width: 0;
 }
 
-.meta-code {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-
-/* Walking distance is the thing you act on, so it gets a chip of its own
-   rather than trailing off the end of a run-on line. */
+/* Walking distance is the thing you act on, so it gets a plate of its own rather than
+   trailing off the end of a run-on line. Squared, and filled with `--surface` rather
+   than `--surface-2`: the head it sits on is now `--surface-2` itself, so the old fill
+   would have made it invisible. The border is what keeps it a distinct object at the
+   1.4:1 step between the two. */
 .meta-dist {
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
   color: var(--text);
   font-size: 0.78rem;
   font-weight: 600;
@@ -893,7 +1045,7 @@ input[type='search']::-webkit-search-cancel-button {
   height: 2.75rem;
   margin: -0.4rem -0.35rem -0.4rem 0;
   border-color: transparent;
-  border-radius: 10px;
+  border-radius: 4px;
   background: none;
   color: var(--muted);
   font-size: 1.2rem;
@@ -958,12 +1110,20 @@ input[type='search']::-webkit-search-cancel-button {
   min-width: 0;
 }
 
+/* The stencil face's second and last job. A service number is the other thing a rider
+   matches against something physical — the blind on the front of the bus — so it is set
+   in the same face as the code above it and nothing else on the row is.
+
+   Condensed also buys width where the column is tightest: `--col-service` is 3.6rem and
+   has to hold four characters at worst ("966B", "NR7"), which the system stack only
+   manages by dropping a size. */
 .service-no {
   display: block;
-  font-size: 1.2rem;
+  font-family: var(--display);
+  font-size: 1.3rem;
   font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1211,7 +1371,7 @@ input[type='search']::-webkit-search-cancel-button {
   .load-lsd {
     margin-top: 0.1rem;
     padding: 0.05rem 0.4rem;
-    border-radius: 999px;
+    border-radius: 3px;
   }
 
   .load-sea {

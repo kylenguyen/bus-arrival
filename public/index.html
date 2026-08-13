@@ -7,22 +7,46 @@
     <!-- Tints the browser chrome so the page does not end at a white seam. -->
     <!-- These two duplicate `--bg` in each scheme and cannot read a CSS variable.
          Keep them in step with the token blocks at the top of styles.css. -->
-    <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#e7ebe7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Live bus arrival times for the stops nearest you." />
-    <title>Bus Arrivals</title>
+    <title>ezbus · live bus arrivals</title>
     <!-- Fetched in parallel with app.js, which imports it, rather than after. -->
     <link rel="modulepreload" href="/origin.js" />
     <link rel="stylesheet" href="/styles.css" />
+    <!-- The stylesheet is what discovers this, and it is discovered late: a webfont is
+         requested only once the CSS has parsed and matched a rule that uses it. Preloading
+         it here starts the fetch alongside the stylesheet instead of after it, which is the
+         difference between the stop codes swapping before first paint and swapping a beat
+         after it. `crossorigin` is required even same-origin — a font is always fetched in
+         CORS mode, and without it the preload is discarded and fetched a second time. -->
+    <link
+      rel="preload"
+      href="/fonts/archivo-narrow-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <!-- A drawn mark, not the 🚍 this replaces: the board draws its own buses (see
+         `VEHICLE` in app.js) and an emoji rendered by whichever platform the tab is on
+         was the one piece of the identity we did not control. Same double decker, same
+         stroke weight, on the mosaic turquoise. `#` must be percent-encoded in a data
+         URI or the rest of the attribute reads as a fragment. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🚍</text></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230a6a72'/><g fill='none' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round'><rect x='6' y='7' width='20' height='14' rx='3'/><path d='M6 14h20'/></g><g fill='%23ffffff'><circle cx='11' cy='24' r='2'/><circle cx='21' cy='24' r='2'/></g></svg>"
     />
   </head>
   <body>
     <header class="masthead">
       <div class="masthead-row">
-        <h1>Bus Arrivals</h1>
+        <!-- The product is called ezbus and until now the name was only in the URL bar.
+             The two spans exist so the turquoise lands on `ez` alone; the whole word is
+             one accessible string either way, because neither span is `aria-hidden` and
+             there is no whitespace between them to split it. -->
+        <h1><span class="mark-ez">ez</span><span>bus</span></h1>
         <!-- Not a search button: it names the door the board is ranked from and
              opens the panel that changes it. The label is short on purpose — it
              shares this row with the h1 on a 360 px phone and `.ghost` does not
@@ -180,9 +204,26 @@
            Both door labels are verbatim `ADDRESS_DOOR_LABEL` and its GPS twin in
            public/origin.js, asserted in src/origin.test.ts. Do not reword them;
            the card’s voice lives in the lines around them. -->
+      <!-- The wordmark sits here and only here on a first visit: the masthead behind the
+           backdrop is the one screen a new user has not read yet, so without this line the
+           product would introduce itself without ever saying its name.
+
+           An eyebrow rather than a second heading — it is the same words as the `<title>`
+           and the domain, not a level in the document — and 0.8rem so the band grows by
+           about a line, which the 620px-height rule below is already sized against. -->
       <div class="intro-band">
-        <span class="intro-band-mark" aria-hidden="true">🚍</span>
-        <h2 id="intro-title">Your next bus, in two taps</h2>
+        <span class="intro-band-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 26" fill="none" aria-hidden="true" focusable="false">
+            <g stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+              <rect x="2" y="2" width="28" height="18" rx="4" /><path d="M2 11h28" />
+            </g>
+            <g fill="currentColor"><circle cx="9" cy="23" r="2.4" /><circle cx="23" cy="23" r="2.4" /></g>
+          </svg>
+        </span>
+        <div class="intro-band-text">
+          <p class="intro-band-name">ezbus</p>
+          <h2 id="intro-title">Your next bus, in two taps</h2>
+        </div>
       </div>
 
       <div class="intro-sample">
@@ -194,9 +235,10 @@
         <div class="card" aria-hidden="true">
           <div class="card-head">
             <div class="card-title">
+              <span class="meta-code">43179</span>
               <span class="card-name">Opp Blk 123</span>
               <span class="card-sub">
-                <span class="meta-where"><span class="meta-code">43179</span>&nbsp;· Ang Mo Kio Ave 3</span>
+                <span class="meta-where">Ang Mo Kio Ave 3</span>
                 <span class="meta-dist">180 m</span>
               </span>
             </div>

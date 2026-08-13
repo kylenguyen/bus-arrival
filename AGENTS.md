@@ -2,6 +2,12 @@
 
 Guidance for coding agents working in this repository. Read this before making changes.
 
+This file governs **behaviour**. [style-guide.md](style-guide.md) governs **how it
+looks** — the Void Deck visual system: colour tokens, the two-face type rule, shape,
+card anatomy, motion and the identity assets. Read it before any change that touches
+colour, type, radius, card layout or the wordmark. Where the two disagree, this file
+wins: every rule there is subordinate to the one below.
+
 ## The one thing that matters
 
 **A commuter must find out what bus is coming, and when, as quickly and with as
@@ -145,6 +151,12 @@ convenience for capability, the default answer is no. Concretely:
   a one-line assignment. It is split that way because `app.js` cannot be imported
   by a test and `origin.js` can, which is the only unit coverage the journey
   rules have. Do not inline it back.
+
+  The stylesheet is hand-written CSS with a token layer at the top, and
+  [style-guide.md](style-guide.md) is its rationale — every colour, the type split and
+  the 4px radius are decisions with an argument behind them, not defaults. One
+  self-hosted webfont (`public/fonts/`, 11.9 KB) and no other asset dependency; adding a
+  second is a payload decision, not a styling one.
 - Upstream data: LTA DataMall (`BusStops`, `v3/BusArrival`). The addresses the
   finder searches are not upstream at all — they are a committed file in `data/`,
   read once at startup, with no third party in the request path.
@@ -248,7 +260,9 @@ before the image build. Everything else, verify by running it:
    typing real addresses into the box and reading the order, not by a 200.
 4. For frontend changes, open `http://localhost:8080` and check the board in a
    phone-width viewport first (device toolbar, ~375 px) — that is the shipping
-   target, so a change checked only at desktop width is unverified. Confirm the
+   target, so a change checked only at desktop width is unverified. A change to
+   colour, type, radius or card layout is also checked against the "Changing this"
+   list at the end of [style-guide.md](style-guide.md). Confirm the
    first screenful still leads with arrivals, nothing scrolls sideways, and every
    control is a comfortable one-handed tap. Geolocation needs a secure context — `localhost` counts, a
    bare LAN IP does not. The first visit is a different journey from every later
@@ -373,6 +387,11 @@ Two directories are not code and are easy to miss:
 - Comments explain why, not what, and are used sparingly on decisions that look
   arbitrary otherwise (cache TTLs, concurrency of 5, TCP liveness probe). Match
   that density; do not annotate obvious code.
+- Visual changes go through the tokens in `public/styles.css`, never a literal colour
+  in a component rule. The system and the reasoning are in
+  [style-guide.md](style-guide.md); the two rules most often broken by a well-meaning
+  tidy-up are that `--accent` and the crowding family must not share a hue, and that
+  dark mode's `--shadow` is a transparent shadow rather than `none`.
 - Frontend renders through `escape()` before interpolating into `innerHTML`.
   Every new interpolation of server or user data must go through it.
 - Singapore conventions in user-facing output: `en-SG`, 24-hour time, metres.
