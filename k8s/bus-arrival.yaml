@@ -38,7 +38,7 @@ spec:
         #   kubectl -n ezbus rollout restart deployment/bus-arrival
         # Roll back by pinning the SHA tag that workflow also pushes:
         #   kubectl -n ezbus set image deployment/bus-arrival bus-arrival=ghcr.io/kylenguyen/bus-arrival:<sha>
-        image: ghcr.io/kylenguyen/bus-arrival:latest
+        image: ghcr.io/kylenguyen/ezbus:latest
         # Required, not incidental: a moving tag with IfNotPresent would keep
         # serving whatever the node cached the first time and silently ignore
         # every rebuild.
