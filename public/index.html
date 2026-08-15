@@ -45,8 +45,14 @@
         <!-- The product is called ezbus and until now the name was only in the URL bar.
              The two spans exist so the turquoise lands on `ez` alone; the whole word is
              one accessible string either way, because neither span is `aria-hidden` and
-             there is no whitespace between them to split it. -->
-        <h1><span class="mark-ez">ez</span><span>bus</span></h1>
+             there is no whitespace between them to split it.
+
+             A link, like its twin on the route page: the wordmark is the way home from
+             anywhere in the product, and a logo that is tappable on one page and inert
+             on another is the kind of inconsistency people only notice by failing. From
+             the board this is a self-link, which is what reloads a session back to the
+             top-level view. -->
+        <h1><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></h1>
         <!-- Not a search button: it names the door the board is ranked from and
              opens the panel that changes it. The label is short on purpose — it
              shares this row with the h1 on a 360 px phone and `.ghost` does not

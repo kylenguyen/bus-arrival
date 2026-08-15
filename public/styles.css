@@ -206,6 +206,27 @@ h1 .mark-ez {
   color: var(--accent);
 }
 
+/* The wordmark is a link on every page — the way home from anywhere in the
+   product. Same ink as the h1 it sits in, because the `ez` span carries the
+   accent and an underline under a logo reads as a rendering fault.
+   `inline-block` so the focus ring traces the word rather than the h1's full
+   line box.
+
+   The ring is spelled out because the `:focus-visible` rule below covers only
+   `button` and `input`: a keyboard user tabbing to the wordmark would otherwise
+   land on it invisibly. */
+h1 a {
+  display: inline-block;
+  color: inherit;
+  text-decoration: none;
+}
+
+h1 a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
 .tagline {
   margin: 0.15rem 0 0;
   color: var(--muted);
@@ -1467,14 +1488,6 @@ input[type='search']::-webkit-search-cancel-button {
    number in the first column would out-shout the minutes beside it, and the
    whole card already telegraphs "tappable" better than an underline does. */
 a.service-no {
-  color: inherit;
-  text-decoration: none;
-}
-
-/* The wordmark is a link on the route page — same ink as the h1 it sits in,
-   because the `ez` span carries the accent and an underline under a logo reads
-   as a rendering fault. Harmless on the board, where the h1 holds no anchor. */
-h1 a {
   color: inherit;
   text-decoration: none;
 }
