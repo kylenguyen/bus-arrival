@@ -100,7 +100,7 @@ cache-control: private, max-age=300
 Two deliberate departures from copying the old route:
 
 - **`private`, not `public`, max-age.** `/api/stops` carried stop codes; `/api/places` carries whatever the user typed, routinely their own home postal code. `public` invites Traefik or a CDN to store a URL containing a stranger's address, which sits badly beside the repo's rule that `/api/board`'s coordinate is `no-store` and never logged. `private` keeps per-keystroke caching free in the user's own browser, which is the entire practical benefit at this traffic level.
-- **A new path, not the old one reused.** `public/` is served with `maxAge: '1h'`, so a stale `app.js` runs for up to an hour after deploy. A 404 makes its existing `catch` say "Search is unavailable right now." — one degraded panel, board and pins intact — where a 200 with a different body shape would render `undefined` rows.
+- **A new path, not the old one reused.** A page opened before a deploy goes on running the `app.js` it already loaded until someone reloads it. A 404 makes that copy's existing `catch` say "Search is unavailable right now." — one degraded panel, board and pins intact — where a 200 with a different body shape would render `undefined` rows. When this was written `public/` was served with `maxAge: '1h'`, so the same window also applied to fresh loads for an hour after a deploy; that part is gone now that the shells and assets revalidate (`STATIC_CACHE_CONTROL` in [src/index.ts](../src/index.ts)), but the open-tab case stands and so does the decision.
 
 ### D5 — The origin record
 

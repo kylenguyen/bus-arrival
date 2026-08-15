@@ -36,6 +36,28 @@ const MAX_QUERY = 64;
 const MAX_STOPS = 8;
 const DEFAULT_NEARBY = 8;
 
+/**
+ * What every file in `public/` is served with — the two shells and the assets
+ * alike, which is the point: they are one unit and must never be cached apart.
+ *
+ * `no-cache` is "keep the copy, revalidate before reusing it", not "do not store
+ * it". `express.static` already sends `ETag` and `Last-Modified`, so the revalidation
+ * costs a conditional request and comes back a ~200-byte `304` rather than the body.
+ *
+ * This used to be `maxAge: '1h'`, which bought that round trip at two prices. A
+ * deploy stayed invisible to a returning visitor for an hour, which is
+ * indistinguishable from a deploy that never happened and cost an afternoon of
+ * looking in the wrong place. Worse, the hour was per file: a browser could hold a
+ * 59-minute-old `app.js` against a fresh `index.html` and render the page
+ * half-updated. Six small assets at this traffic level do not justify either.
+ *
+ * Fingerprinted filenames under `immutable` would buy the round trip back, at the
+ * cost of a build step that rewrites references in both shells and an import map to
+ * keep the module specifiers in `app.js`/`route.js` resolving. Worth it if the
+ * conditional requests ever show up in the numbers; not before.
+ */
+const STATIC_CACHE_CONTROL = 'no-cache';
+
 const stops = new StopIndex();
 const places = new PlaceIndex();
 const routes = new RouteIndex();
@@ -216,11 +238,16 @@ const resolveQuery = (query: string): Place[] => {
 /**
  * The address finder, and the only door for a visitor who will not or cannot
  * share a location. It replaces the stop-name search route, at a **new path**
- * rather than the old one reused: `public/` is served with `maxAge: '1h'`, so a
- * stale `app.js` runs for up to an hour after a deploy, and a 404 makes its
- * existing `catch` say "Search is unavailable right now." — one degraded panel
- * over a working board — where a 200 with a different body shape would render
- * `undefined` rows.
+ * rather than the old one reused: a page opened before a deploy goes on running
+ * the `app.js` it already loaded until someone reloads it, and a 404 makes that
+ * copy's existing `catch` say "Search is unavailable right now." — one degraded
+ * panel over a working board — where a 200 with a different body shape would
+ * render `undefined` rows.
+ *
+ * That window used to be an hour wide for fresh loads too, because `public/` was
+ * served with `maxAge: '1h'`; it is now bounded by revalidation (see
+ * `STATIC_CACHE_CONTROL`). The open-tab case remains, which is why the new path
+ * stays.
  *
  * `private`, not `public`, max-age. The old route carried stop codes; this URL
  * carries whatever the user typed, routinely their own home postal code, and a
@@ -311,16 +338,26 @@ app.get('/api/route/:service', (req, res) => {
 /**
  * The route page shell. Deliberately lenient about `:service` — the client
  * renders its own "no such service" state, and a 404 here would swap that page
- * for the browser's. Same 1 h cache as the rest of `public/`.
+ * for the browser's. Same revalidation as the rest of `public/`.
+ *
+ * `headers` rather than `maxAge`: `send` derives its own `Cache-Control` from
+ * `maxAge`, so passing both would put two intentions in one response.
  */
 app.get('/bus/:service', (_req, res) => {
-  res.sendFile(path.join(import.meta.dirname, '..', 'public', 'route.html'), { maxAge: '1h' });
+  res.sendFile(path.join(import.meta.dirname, '..', 'public', 'route.html'), {
+    headers: { 'Cache-Control': STATIC_CACHE_CONTROL },
+  });
 });
 
 app.use(
   express.static(path.join(import.meta.dirname, '..', 'public'), {
-    maxAge: '1h',
     index: 'index.html',
+    // Overrides the `public, max-age=0` that `send` derives from the default
+    // `maxAge`. `serve-static` runs this after `send` has set its own header
+    // and before the response goes out, so this is the one that lands.
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', STATIC_CACHE_CONTROL);
+    },
   }),
 );
 

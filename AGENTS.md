@@ -316,10 +316,13 @@ One route, three answers: `/api/places` decides what a query means rather than
 making the client guess. Six digits are a postal code (`PlaceIndex.get`), five
 are a stop code (`StopIndex.get`, the escape hatch), anything else is an address
 search (`PlaceIndex.search`, ≤10 rows). `GET /api/stops` is **gone** — it 404s,
-which is deliberate: `public/` is served with `maxAge: '1h'`, so a stale `app.js`
-runs for up to an hour after a deploy, and a 404 makes its existing `catch` say
-"Search is unavailable right now." over a working board, where a 200 with a
-different body shape would render `undefined` rows.
+which is deliberate: a page opened before a deploy goes on running the `app.js`
+it already loaded until someone reloads it, and a 404 makes that copy's existing
+`catch` say "Search is unavailable right now." over a working board, where a 200
+with a different body shape would render `undefined` rows. `public/` was served
+with `maxAge: '1h'` when that call was made, which widened the window to an hour
+for fresh loads as well; it is `no-cache` now (`STATIC_CACHE_CONTROL` in
+[src/index.ts](src/index.ts)), and the open-tab case is what keeps the decision.
 
 - [public/app.js](public/app.js) — glue only: elements, `fetch`, `localStorage`,
   event wiring. Every rule it applies is decided in
