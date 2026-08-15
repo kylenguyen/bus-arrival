@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en-SG">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Tints the browser chrome so the page does not end at a white seam.
+         These two duplicate `--bg` in each scheme and cannot read a CSS variable.
+         Keep them in step with the token blocks at the top of styles.css. -->
+    <meta name="theme-color" content="#e7ebe7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Next buses at this stop, and today's first and last bus." />
+    <!-- Server-injected meta. The three tags below are the replacement targets:
+         `/stop/:code` in src/index.ts swaps each whole tag, by exact string
+         match, for a per-stop version when the code is a known stop. The tokens
+         are the generic tags themselves rather than `__STOP_TITLE__`-style
+         markers, so this file served unreplaced — by express.static, or for an
+         unknown code — is already valid, sensibly generic HTML with no marker
+         text to leak into a tab title. Edit one of these tags and its constant
+         in src/index.ts in the same commit, or the injection silently stops. -->
+    <title>bus stop · ezbus</title>
+    <meta property="og:title" content="bus stop · ezbus" />
+    <meta property="og:description" content="Next buses now · first & last bus today" />
+    <meta property="og:url" content="https://ezbus.sg/stop" />
+    <!-- Fetched in parallel with stop.js, which imports them, rather than after.
+         route-logic.js (for the shared haversine) itself imports origin.js, so
+         all three pure modules are named here. -->
+    <link rel="modulepreload" href="/origin.js" />
+    <link rel="modulepreload" href="/route-logic.js" />
+    <link rel="modulepreload" href="/stop-logic.js" />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Same reasoning as index.html: preloaded so the stencilled stop code
+         swaps at first paint rather than a beat after it. `crossorigin` is
+         required even same-origin — fonts always fetch in CORS mode. -->
+    <link
+      rel="preload"
+      href="/fonts/archivo-narrow-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230a6a72'/><g fill='none' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round'><rect x='6' y='7' width='20' height='14' rx='3'/><path d='M6 14h20'/></g><g fill='%23ffffff'><circle cx='11' cy='24' r='2'/><circle cx='21' cy='24' r='2'/></g></svg>"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-row">
+        <!-- Same wordmark as the board, but a link: on this page it is the way
+             back as well as the name, and the board is one tap away wherever
+             you are on the stop page. -->
+        <h1><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></h1>
+      </div>
+    </header>
+
+    <main class="stop-main">
+      <p class="back"><a href="/">← Back to board</a></p>
+
+      <!-- The flag plate: code, name, road, distance, pin, share, opposite.
+           stop.js rewrites this once /api/stop lands; until then it holds the
+           plate's skeleton so the wait has the answer's shape — no spinner,
+           ever, same as everywhere else. -->
+      <div id="sp-plate">
+        <div class="card sp-plate skeleton" aria-hidden="true">
+          <div class="card-head">
+            <div class="card-title">
+              <span class="sk sk-code"></span>
+              <span class="sk sk-name"></span>
+              <span class="sk sk-sub"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- The arrivals board for this one stop — or the guard, when the code in
+           the URL is not a stop. Skeleton rows at the arrivals grid's own size,
+           so nothing jumps when the timings land. -->
+      <section id="sp-arrivals" aria-label="Next buses at this stop">
+        <div class="card skeleton" aria-hidden="true">
+          <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+          <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+          <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
+        </div>
+      </section>
+
+      <!-- "Today at this stop": the flat first/last/frequency table with the
+           Weekday/Sat/Sun control. Empty until /api/stop lands — the arrivals
+           skeleton above already says the page is loading. -->
+      <section id="sp-sched" aria-label="Today at this stop"></section>
+    </main>
+
+    <footer class="footer">
+      <span id="status">—</span>
+      <span class="dot">·</span>
+      <span>* scheduled, not tracked</span>
+      <span class="dot">·</span>
+      <span>Data © LTA, via DataMall</span>
+    </footer>
+
+    <script src="/stop.js" type="module"></script>
+  </body>
+</html>

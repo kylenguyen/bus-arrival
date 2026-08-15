@@ -327,6 +327,8 @@ interface RawServiceInfo {
   Operator?: string;
   Category?: string;
   LoopDesc?: string;
+  AM_Peak_Freq?: string;
+  AM_Offpeak_Freq?: string;
 }
 
 /** DataMall writes `-` where a stop has no scheduled bus for that day pattern. */
@@ -386,6 +388,16 @@ export const fetchAllRoutes = async (): Promise<RouteStop[]> => {
   return routes;
 };
 
+/**
+ * A headway string, or null. Same `-` convention as `toTimes`, but null rather
+ * than '' because `ServiceFreq` is nullable on the wire and there is no
+ * three-field "all absent" collapse to preserve here.
+ */
+const toFreq = (value?: string): string | null => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed !== '-' ? trimmed : null;
+};
+
 const toServiceInfo = (raw: RawServiceInfo): ServiceInfo | null => {
   const serviceNo = raw.ServiceNo?.trim();
   if (!serviceNo) return null;
@@ -394,6 +406,7 @@ const toServiceInfo = (raw: RawServiceInfo): ServiceInfo | null => {
     operator: raw.Operator?.trim() ?? '',
     category: raw.Category?.trim() ?? '',
     loopDesc: raw.LoopDesc?.trim() ?? '',
+    freq: { peak: toFreq(raw.AM_Peak_Freq), offpeak: toFreq(raw.AM_Offpeak_Freq) },
   };
 };
 

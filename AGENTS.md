@@ -327,6 +327,15 @@ for fresh loads as well; it is `no-cache` now (`STATIC_CACHE_CONTROL` in
 - [public/app.js](public/app.js) — glue only: elements, `fetch`, `localStorage`,
   event wiring. Every rule it applies is decided in
   [public/origin.js](public/origin.js), which is pure and unit tested
+- [public/stop.html](public/stop.html) — the stop page shell (`/stop/:code`),
+  served by the route in `index.ts` with title/OG placeholders swapped
+  server-side; valid generic HTML if ever served unreplaced
+- [public/stop.js](public/stop.js) — glue only, the same bargain as `app.js`:
+  elements, `fetch`, storage, wiring; no storage key of its own — it reads and
+  writes the board's `pins.v1` and reads `loc.v1`, never prompting for location
+- [public/stop-logic.js](public/stop-logic.js) — the stop page's pure decision
+  logic: no DOM, `fetch`, storage or clock, `now` is a parameter; unit tested
+  from `src/stop-logic.test.ts` via the same computed specifier as `origin.js`
 - [src/index.ts](src/index.ts) — Express routes, input validation, static files
 - [src/stops.ts](src/stops.ts) — the whole stop list in memory; linear-scan
   nearest-neighbour, refreshed daily. A few thousand rows, so no index and no

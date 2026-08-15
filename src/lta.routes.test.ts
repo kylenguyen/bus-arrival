@@ -257,6 +257,9 @@ describe('field mapping', () => {
           Category: 'TRUNK',
           OriginCode: '84009',
           DestinationCode: '43009',
+          // `-` is DataMall's "no data", the same convention the times use;
+          // AM_Offpeak_Freq missing entirely must land in the same place.
+          AM_Peak_Freq: '-',
           LoopDesc: '',
         },
       ],
@@ -265,8 +268,20 @@ describe('field mapping', () => {
     try {
       const services = await fetchAllServices();
       assert.deepEqual(services, [
-        { serviceNo: '107M', operator: 'SBST', category: 'TRUNK', loopDesc: 'Raffles Blvd' },
-        { serviceNo: '61', operator: 'SBST', category: 'TRUNK', loopDesc: '' },
+        {
+          serviceNo: '107M',
+          operator: 'SBST',
+          category: 'TRUNK',
+          loopDesc: 'Raffles Blvd',
+          freq: { peak: '14-17', offpeak: null },
+        },
+        {
+          serviceNo: '61',
+          operator: 'SBST',
+          category: 'TRUNK',
+          loopDesc: '',
+          freq: { peak: null, offpeak: null },
+        },
       ]);
     } finally {
       restore();

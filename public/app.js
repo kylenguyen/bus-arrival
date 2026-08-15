@@ -713,8 +713,10 @@ function renderShells() {
       <article class="card${stop.pinned ? ' pinned' : ''}" data-code="${escape(stop.code)}">
         <div class="card-head">
           <div class="card-title">
-            <span class="meta-code">${escape(stop.code)}</span>
-            <span class="card-name">${escape(stop.description)}</span>
+            <a class="card-link" href="/stop/${escape(stop.code)}">
+              <span class="meta-code">${escape(stop.code)}</span>
+              <span class="card-name">${escape(stop.description)}</span>
+            </a>
             <span class="card-sub">
               ${stop.roadName ? `<span class="meta-where">${escape(stop.roadName)}</span>` : ''}
               ${distance ? `<span class="meta-dist">${escape(distance)}</span>` : ''}

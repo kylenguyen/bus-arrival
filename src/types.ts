@@ -59,6 +59,18 @@ export interface RouteStop {
   lastBus?: RouteStopTimes;
 }
 
+/**
+ * Headway strings from BusServices, raw as DataMall spells them (`"06-08"`,
+ * minutes) — formatting for display is the client's job. `null` when the feed
+ * writes `-` or omits the field, which it does for services that do not run in
+ * that window. AM only: the stop page shows one peak and one off-peak figure,
+ * and the PM pair adds two fields nobody reads.
+ */
+export interface ServiceFreq {
+  peak: string | null;
+  offpeak: string | null;
+}
+
 /** Service-level metadata from BusServices. */
 export interface ServiceInfo {
   serviceNo: string;
@@ -67,6 +79,24 @@ export interface ServiceInfo {
   category: string;
   /** Where a loop service turns; empty for a normal two-direction service. */
   loopDesc: string;
+  /** DataMall `AM_Peak_Freq` / `AM_Offpeak_Freq`. */
+  freq: ServiceFreq;
+}
+
+/**
+ * One service calling at a stop, for the stop page's schedule table — the
+ * per-stop view `RouteStop` records are folded into. A service serving the
+ * stop in both directions (or twice on a loop) appears once: per day-type,
+ * `firstBus` keeps the earliest time and `lastBus` the latest, where a last
+ * bus before 0400 counts as next-day. Empty string still means "no data",
+ * exactly as `RouteStopTimes` spells it.
+ */
+export interface StopService {
+  serviceNo: string;
+  operator: string;
+  firstBus: RouteStopTimes;
+  lastBus: RouteStopTimes;
+  freq: ServiceFreq;
 }
 
 /**
@@ -106,6 +136,22 @@ export interface RouteResponse {
   loopDesc: string | null;
   /** Direction 1 first, then 2; a loop service carries one entry. */
   directions: RouteDirectionPayload[];
+  fetchedAt: string;
+  mock: boolean;
+}
+
+/**
+ * Everything the stop page needs that is not live arrivals: the stop itself,
+ * the opposite-kerb pair when one can be inferred, and the schedule of every
+ * service calling there. Arrivals stay on `/api/arrivals` — they are `no-store`
+ * and this payload is cacheable.
+ */
+export interface StopResponse {
+  stop: BusStop;
+  /** Null when no confident pair exists — the client omits the chip, never
+   *  disables it. */
+  opposite: Pick<BusStop, 'code' | 'description'> | null;
+  services: StopService[];
   fetchedAt: string;
   mock: boolean;
 }

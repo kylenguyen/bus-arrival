@@ -1492,14 +1492,33 @@ a.service-no {
   text-decoration: none;
 }
 
+/* The board card's code and name are a link too (they open the stop page), and
+   so is the route spine's anchored stop name. Same argument as a.service-no:
+   inherit the ink, no underline — an accent block leading every card would
+   out-shout the minutes below it. `.card-link` is a block so the two lines it
+   wraps keep the exact geometry they had as bare spans in `.card-title`. */
+a.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.spine a.here-link {
+  color: inherit;
+  text-decoration: none;
+}
+
 /* One line of way-back over the route header. The negative margin keeps the
-   44px tap target from costing a whole row of air under the masthead. */
-.route-main .back {
+   44px tap target from costing a whole row of air under the masthead. The stop
+   page shares the rule — same line, same place, one look. */
+.route-main .back,
+.stop-main .back {
   margin: -0.5rem 0 0.1rem;
   font-size: 0.8rem;
 }
 
-.route-main .back a {
+.route-main .back a,
+.stop-main .back a {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
@@ -2098,4 +2117,165 @@ a.service-no {
   .rt-no {
     font-size: 1.8rem;
   }
+}
+
+/* --- stop page (/stop/:code) — the Flagboard --------------------------------
+   Everything below serves stop.html/stop.js. The plate is the board's own
+   card-head idiom enlarged one step — the object on the pole, at pole size —
+   and the arrivals card reuses the board's grid (.services, .service, .eta*)
+   untouched. Everything new is prefixed .sp-. Same two colour families with
+   the same jobs, squared radii, nothing under the 0.7rem sunlight floor, and
+   dark mode arrives through the token swap alone. */
+
+/* The stencil code at the .rt-no step: on this page the five digits are the
+   headline, being matched against the pole the reader is standing at. */
+.sp-plate .meta-code {
+  font-size: 2.1rem;
+}
+
+.sp-plate .card-name {
+  font-size: 1.05rem;
+}
+
+.sp-plate .card-head {
+  padding: 0.75rem 0.8rem;
+}
+
+/* The skeleton plate's code bar matches the enlarged code, so nothing jumps
+   when the real plate lands. */
+.sp-plate .sk-code {
+  height: 2.1rem;
+}
+
+/* The plate's verbs — Share, and the flip to the opposite kerb. The .g-actions
+   idiom (bare accent verbs, 44px targets) on the plate's own surface. */
+.sp-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+  padding: 0.05rem 0.8rem;
+}
+
+.sp-act {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* A schedule answer standing in for the three ETA cells: "Ended · first bus
+   05:30" / "First bus 05:45". Spans the grid's timing columns so the service
+   number keeps its place in the board grid above and below it. */
+.sp-svc-status {
+  grid-column: 2 / -1;
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An ended service's number goes quiet — position and weight carry the row,
+   never a third colour family. */
+.sp-off .service-no {
+  color: var(--muted);
+}
+
+/* --- "Today at this stop" --- */
+
+/* The day control reuses .dir-toggle wholesale (three buttons instead of two);
+   this only trims the gap to the eyebrow above it. */
+.sp-seg {
+  margin-top: 0.1rem;
+}
+
+/* The flat schedule table: Bus | First | Last | Every. Same head treatment and
+   the same first column as the arrivals grid, so the service numbers line up
+   from one card to the next. */
+.sp-sched-head,
+.sp-sched-row {
+  display: grid;
+  grid-template-columns: var(--col-service) 1fr 1fr 1.4fr;
+  gap: var(--col-gap);
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+}
+
+.sp-sched-head {
+  padding-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sp-sched-head > span + span {
+  text-align: right;
+}
+
+.sp-sched-row {
+  font-size: 0.9rem;
+}
+
+.sp-time,
+.sp-freq {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-freq {
+  font-size: 0.82rem;
+}
+
+/* The off-peak headway under the peak one. 0.72rem sits above the floor. The
+   <b> holds the range and its unit together, so a narrow cell breaks after
+   "off-peak" rather than stranding "min" on a line of its own. */
+.sp-offpeak {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.sp-offpeak b {
+  font-weight: inherit;
+  white-space: nowrap;
+}
+
+/* --- the guard's code re-entry --- */
+
+.sp-code-entry {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* The same field dressing as the finder's search box; type="text" because the
+   guard wants digits, not a query, so the search affordances would lie. */
+.sp-code-entry input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem; /* 16 px or iOS zooms the page on focus */
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-code-entry input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

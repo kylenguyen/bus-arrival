@@ -141,24 +141,25 @@ const firstLast = (minuteOfDay: number): RouteStopTimes => ({
 
 /**
  * Flattened route records in the shape the live BusRoutes mapper produces.
- * First/last bus times sit on sequence-1 records only, matching where the
- * RouteIndex reads them from.
+ * Every record carries per-stop first/last times, as the real feed does — the
+ * RouteIndex reads the seq-1 record for the route page's terminus schedule and
+ * every record for the stop page's reverse index, and a fixture with times on
+ * seq 1 only would leave the second path unexercised. Each stop down the leg
+ * runs two minutes later than the one before, so a stop a service visits twice
+ * gets two different schedules and the min/max merge is observable.
  */
 export const MOCK_ROUTES: RouteStop[] = ROUTE_SHAPES.flatMap(({ serviceNo, directions }) =>
   directions.flatMap((codes, dirIndex) =>
     codes.map((code, i): RouteStop => {
-      const record: RouteStop = {
+      const seed = hash(serviceNo);
+      return {
         serviceNo,
         direction: dirIndex === 0 ? 1 : 2,
         seq: i + 1,
         code,
+        firstBus: firstLast(5 * 60 + 30 + (seed % 30) + i * 2),
+        lastBus: firstLast(23 * 60 + (seed % 45) + i * 2),
       };
-      if (i === 0) {
-        const seed = hash(serviceNo);
-        record.firstBus = firstLast(5 * 60 + 30 + (seed % 30));
-        record.lastBus = firstLast(23 * 60 + (seed % 45));
-      }
-      return record;
     }),
   ),
 );
@@ -169,6 +170,12 @@ export const MOCK_SERVICE_INFO: ServiceInfo[] = ROUTE_SHAPES.map(({ serviceNo, l
   operator: OPERATORS[hash(serviceNo) % OPERATORS.length] ?? 'SBST',
   category: loopDesc === undefined ? 'TRUNK' : 'FEEDER',
   loopDesc: loopDesc ?? '',
+  // Plausible headways so the stop page's freq column has something to show;
+  // seeded like everything else here, so a service keeps its figures.
+  freq: {
+    peak: `${String(5 + (hash(serviceNo) % 4)).padStart(2, '0')}-${String(9 + (hash(serviceNo) % 4)).padStart(2, '0')}`,
+    offpeak: `${10 + (hash(serviceNo) % 5)}-${15 + (hash(serviceNo) % 5)}`,
+  },
 }));
 
 export const mockRoutes = (): RouteStop[] => MOCK_ROUTES;

@@ -37,16 +37,27 @@ test('exactly one loop service: single direction, one stop visited twice', () =>
   assert.deepEqual([...visits.values()].sort().reverse(), [2, ...Array(visits.size - 1).fill(1)]);
 });
 
-test('sequences are contiguous from 1 and carry first/last bus on seq 1 only', () => {
+test('sequences are contiguous from 1 and every record carries first/last bus', () => {
+  // Per-stop times on every record, as the real feed sends them: the stop
+  // page's reverse index reads them all, so a fixture that only scheduled the
+  // seq-1 record would leave that path untested in mock mode.
   const byLeg = new Map<string, number[]>();
   for (const r of mockRoutes()) {
     const key = `${r.serviceNo}:${r.direction}`;
     byLeg.set(key, [...(byLeg.get(key) ?? []), r.seq]);
-    assert.equal(r.firstBus !== undefined, r.seq === 1, `firstBus placement on ${key} seq ${r.seq}`);
-    assert.equal(r.lastBus !== undefined, r.seq === 1, `lastBus placement on ${key} seq ${r.seq}`);
-    if (r.firstBus) assert.match(r.firstBus.wd, /^\d{4}$/);
+    assert.ok(r.firstBus, `firstBus missing on ${key} seq ${r.seq}`);
+    assert.ok(r.lastBus, `lastBus missing on ${key} seq ${r.seq}`);
+    assert.match(r.firstBus.wd, /^\d{4}$/);
+    assert.match(r.lastBus.wd, /^\d{4}$/);
   }
   for (const [key, seqs] of byLeg) {
     assert.deepEqual(seqs, seqs.map((_, i) => i + 1), `sequence gap in ${key}`);
+  }
+});
+
+test('every mock service carries AM peak and off-peak headways', () => {
+  for (const info of mockServiceInfo()) {
+    assert.match(info.freq.peak ?? '', /^\d{2}-\d{2}$/, `peak freq on ${info.serviceNo}`);
+    assert.match(info.freq.offpeak ?? '', /^\d{2}-\d{2}$/, `offpeak freq on ${info.serviceNo}`);
   }
 });

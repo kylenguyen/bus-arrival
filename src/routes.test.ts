@@ -28,6 +28,11 @@ const { mockRoutes, mockServiceInfo } = await import('./mock.js');
  * visited at seq 1 and again at seq 4. `825` has one direction and *no*
  * BusServices record, so its loop flag can only come from the fallback; `107`
  * has two directions and no BusServices record, so its flag must stay false.
+ *
+ * `61` exists for the reverse index: both directions call at `83059` with
+ * different per-stop schedules, so `servicesAt` has a real merge to do —
+ * min first / max last per day-type, a past-midnight last bus (`0010` beats
+ * `2330`), and `-` day-types that must not erase the other direction's times.
  */
 const ROUTE_FEED = [
   // 972M direction 1, shuffled: 3, 1, 2.
@@ -73,13 +78,56 @@ const ROUTE_FEED = [
   // 107: two directions, absent from BusServices — not a loop.
   { ServiceNo: '107', Direction: 1, StopSequence: 1, BusStopCode: '60011' },
   { ServiceNo: '107', Direction: 2, StopSequence: 1, BusStopCode: '60019' },
+  // 61: both directions call at 83059, each with its own per-stop schedule.
+  {
+    ServiceNo: '61',
+    Direction: 1,
+    StopSequence: 1,
+    BusStopCode: '83059',
+    WD_FirstBus: '0610',
+    WD_LastBus: '2330',
+    SAT_FirstBus: '0700',
+    SAT_LastBus: '2200',
+    SUN_FirstBus: '-',
+    SUN_LastBus: '-',
+  },
+  { ServiceNo: '61', Direction: 1, StopSequence: 2, BusStopCode: '84549' },
+  { ServiceNo: '61', Direction: 2, StopSequence: 1, BusStopCode: '84549' },
+  {
+    ServiceNo: '61',
+    Direction: 2,
+    StopSequence: 2,
+    BusStopCode: '83059',
+    WD_FirstBus: '0545',
+    WD_LastBus: '0010',
+    SAT_FirstBus: '-',
+    SAT_LastBus: '-',
+    SUN_FirstBus: '0700',
+    SUN_LastBus: '2250',
+  },
 ];
 
 /** One record per direction, as the real feed sends — the index collapses it. */
 const SERVICE_FEED = [
-  { ServiceNo: '972M', Operator: 'SMRT', Category: 'TRUNK', LoopDesc: '' },
-  { ServiceNo: '972M', Operator: 'SMRT', Category: 'TRUNK', LoopDesc: '' },
-  { ServiceNo: '359', Operator: 'SBST', Category: 'FEEDER', LoopDesc: 'Pasir Ris Dr 1' },
+  {
+    ServiceNo: '972M',
+    Operator: 'SMRT',
+    Category: 'TRUNK',
+    LoopDesc: '',
+    AM_Peak_Freq: '06-08',
+    AM_Offpeak_Freq: '10-15',
+  },
+  {
+    ServiceNo: '972M',
+    Operator: 'SMRT',
+    Category: 'TRUNK',
+    LoopDesc: '',
+    AM_Peak_Freq: '06-08',
+    AM_Offpeak_Freq: '10-15',
+  },
+  // `-` peak and a missing offpeak must both come through as null.
+  { ServiceNo: '359', Operator: 'SBST', Category: 'FEEDER', LoopDesc: 'Pasir Ris Dr 1', AM_Peak_Freq: '-' },
+  { ServiceNo: '61', Operator: 'SBST', Category: 'TRUNK', LoopDesc: '', AM_Peak_Freq: '05-09' },
 ];
 
 const stubFetch = (async (input: URL | string) => {
@@ -110,8 +158,8 @@ const index = new RouteIndex();
 
 // `reload()` swallows its own failures by design, so an unseeded index would
 // otherwise surface as a dozen confusing failures instead of one clear one.
-if (index.size !== 4) {
-  throw new Error(`fixture did not seed: ${index.size} of 4 services`);
+if (index.size !== 5) {
+  throw new Error(`fixture did not seed: ${index.size} of 5 services`);
 }
 
 describe('RouteIndex stop ordering', () => {
@@ -173,6 +221,52 @@ describe('RouteIndex.get', () => {
   });
 });
 
+describe('RouteIndex.servicesAt', () => {
+  it('merges a stop served in both directions into one entry, min first / max last per day-type', () => {
+    const services = index.servicesAt('83059');
+    assert.equal(services.length, 1);
+    const entry = services[0];
+    assert.ok(entry);
+    assert.equal(entry.serviceNo, '61');
+    assert.equal(entry.operator, 'SBST');
+    // wd first: 0545 (direction 2) beats 0610; sat/sun each exist in one
+    // direction only and must survive the other's `-`.
+    assert.deepEqual(entry.firstBus, { wd: '0545', sat: '0700', sun: '0700' });
+    // wd last: 0010 is past midnight, so it beats 2330 as the latest bus.
+    assert.deepEqual(entry.lastBus, { wd: '0010', sat: '2200', sun: '2250' });
+  });
+
+  it('lists a loop service once for a stop it visits twice, schedule intact', () => {
+    // 359 calls at 77009 at seq 1 (with times) and again at seq 4 (without).
+    const services = index.servicesAt('77009');
+    assert.deepEqual(services.map((s) => s.serviceNo), ['359']);
+    assert.deepEqual(services[0]?.firstBus, { wd: '0530', sat: '', sun: '' });
+    assert.deepEqual(services[0]?.lastBus, { wd: '2345', sat: '', sun: '' });
+  });
+
+  it('keeps empty times as empty when no record carries a schedule', () => {
+    // 84549 is 61's other stop; neither of its records has times, and "no
+    // data" must stay '' rather than borrowing 83059's schedule.
+    const services = index.servicesAt('84549');
+    assert.deepEqual(services.map((s) => s.serviceNo), ['61']);
+    assert.deepEqual(services[0]?.firstBus, { wd: '', sat: '', sun: '' });
+    assert.deepEqual(services[0]?.lastBus, { wd: '', sat: '', sun: '' });
+  });
+
+  it('carries BusServices freq through, with `-` and missing both null', () => {
+    assert.deepEqual(index.servicesAt('44009')[0]?.freq, { peak: '06-08', offpeak: '10-15' });
+    assert.deepEqual(index.servicesAt('83059')[0]?.freq, { peak: '05-09', offpeak: null });
+    // 359's AM_Peak_Freq is `-` and its AM_Offpeak_Freq is absent.
+    assert.deepEqual(index.servicesAt('77009')[0]?.freq, { peak: null, offpeak: null });
+    // 825 has no BusServices record at all.
+    assert.deepEqual(index.servicesAt('55009')[0]?.freq, { peak: null, offpeak: null });
+  });
+
+  it('returns [] for an unknown stop', () => {
+    assert.deepEqual(index.servicesAt('00000'), []);
+  });
+});
+
 describe('RouteIndex.reload', () => {
   it('keeps the previous data when a refresh fails', async () => {
     const before = index.loadedAt;
@@ -185,8 +279,9 @@ describe('RouteIndex.reload', () => {
     } finally {
       globalThis.fetch = realFetch;
     }
-    assert.equal(index.size, 4);
+    assert.equal(index.size, 5);
     assert.deepEqual(index.get('972M')?.directions.get(1)?.stops, ['44009', '44119', '44229']);
+    assert.deepEqual(index.servicesAt('44009').map((s) => s.serviceNo), ['972M']);
     assert.equal(index.loadedAt, before);
   });
 });
@@ -198,12 +293,12 @@ describe('mock-mode build', () => {
 
   it('builds every fixture service', () => {
     const serviceNos = new Set(mockServiceInfo().map((info) => info.serviceNo.toUpperCase()));
-    assert.equal(built.size, serviceNos.size);
-    for (const serviceNo of serviceNos) assert.ok(built.has(serviceNo));
+    assert.equal(built.services.size, serviceNos.size);
+    for (const serviceNo of serviceNos) assert.ok(built.services.has(serviceNo));
   });
 
   it('builds the fixture loop with its double visit and schedule', () => {
-    const loop = built.get('52');
+    const loop = built.services.get('52');
     assert.ok(loop);
     assert.equal(loop.loop, true);
     assert.equal(loop.loopDesc, 'Opp Blk 101');
@@ -211,5 +306,27 @@ describe('mock-mode build', () => {
     assert.deepEqual(loop.directions.get(1)?.stops, ['10001', '10009', '10001']);
     assert.ok(loop.directions.get(1)?.firstBus);
     assert.ok(loop.directions.get(1)?.lastBus);
+  });
+
+  it('indexes 10001 with its three services, numerically sorted, times and freq present', () => {
+    const services = built.stopServices.get('10001') ?? [];
+    // Numeric order — plain string sort would put '167' before '52'.
+    assert.deepEqual(services.map((s) => s.serviceNo), ['52', '167', '985']);
+    for (const service of services) {
+      assert.match(service.firstBus.wd, /^\d{4}$/, `firstBus for ${service.serviceNo}`);
+      assert.match(service.lastBus.wd, /^\d{4}$/, `lastBus for ${service.serviceNo}`);
+      assert.match(service.freq.peak ?? '', /^\d{2}-\d{2}$/, `freq for ${service.serviceNo}`);
+    }
+  });
+
+  it('merges the mock loop 52 across its two visits to 10001', () => {
+    const entry = built.stopServices.get('10001')?.find((s) => s.serviceNo === '52');
+    assert.ok(entry);
+    // Visit 1 runs earlier than visit 3 by construction (+2 min per seq), so
+    // the merge must keep visit 1's first and visit 3's last.
+    const visits = mockRoutes().filter((r) => r.serviceNo === '52' && r.code === '10001');
+    assert.equal(visits.length, 2);
+    assert.equal(entry.firstBus.wd, visits[0]?.firstBus?.wd);
+    assert.equal(entry.lastBus.wd, visits[1]?.lastBus?.wd);
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 
@@ -17,6 +18,7 @@ import type {
   RouteDirectionPayload,
   RouteEndpoint,
   RouteResponse,
+  StopResponse,
 } from './types.js';
 
 /** DataMall documents BusStopCode as a 5-digit identifier. Junk is rejected
@@ -333,6 +335,92 @@ app.get('/api/route/:service', (req, res) => {
   };
   res.set('cache-control', 'public, max-age=300');
   res.json(body);
+});
+
+/**
+ * Everything the stop page needs that is not live arrivals: the stop, its
+ * opposite-kerb pair when one can be inferred, and every service calling there
+ * with first/last bus and headway. Like `/api/route/:service` — a stop code is
+ * public knowledge, so a shared cache is welcome, and the schedule behind this
+ * is static day-to-day. Live arrivals stay on `/api/arrivals` (`no-store`).
+ *
+ * The error bodies (`bad_code`, `unknown_stop`) are machine-readable tokens
+ * pinned by the stop-page contract in docs/stop-page-plan.md — the client
+ * branches on them to pick its guard screen.
+ */
+app.get('/api/stop/:code', (req, res) => {
+  const raw = typeof req.params.code === 'string' ? req.params.code : '';
+  if (!STOP_CODE.test(raw)) {
+    res.status(400).json({ error: 'bad_code' });
+    return;
+  }
+
+  const stop = stops.get(raw);
+  if (!stop) {
+    res.status(404).json({ error: 'unknown_stop' });
+    return;
+  }
+
+  const opposite = stops.oppositeOf(raw);
+  const body: StopResponse = {
+    stop,
+    opposite: opposite ? { code: opposite.code, description: opposite.description } : null,
+    services: routes.servicesAt(raw),
+    fetchedAt: new Date().toISOString(),
+    mock: mockMode,
+  };
+  res.set('cache-control', 'public, max-age=300');
+  res.json(body);
+});
+
+/**
+ * The stop page shell, read once at startup — it ships with `dist/` and cannot
+ * change under a running process, and a missing file should fail the boot, not
+ * the ten-thousandth request.
+ *
+ * The three tag constants are the shell's own generic meta, verbatim: injection
+ * works by exact-string replacement of a whole tag, so the file served
+ * unreplaced (unknown code, or `express.static` fetching `/stop.html` directly)
+ * is already valid generic HTML with no `__TOKEN__` text to leak into a tab
+ * title. stop.html's head comment says the same thing from its side — edit a
+ * tag there and its constant here in the same commit.
+ */
+const STOP_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'stop.html'), 'utf8');
+const STOP_TITLE_TAG = '<title>bus stop · ezbus</title>';
+const STOP_OG_TITLE_TAG = '<meta property="og:title" content="bus stop · ezbus" />';
+const STOP_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/stop" />';
+
+/** Escapes text bound for the stop shell's meta tags — attribute values
+ *  included, hence the quotes. */
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (ch) =>
+    ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '"' ? '&quot;' : '&#39;',
+  );
+
+/**
+ * The stop page shell. Lenient about `:code` for the same reason `/bus/:service`
+ * is — the client renders its own guard, and a 404 here would swap that page for
+ * the browser's. When the code is a known stop, the tab title and OG tags are
+ * injected per-request so a shared link unfurls as the stop rather than as the
+ * app; anything else gets the generic shell untouched.
+ */
+app.get('/stop/:code', (req, res) => {
+  const raw = typeof req.params.code === 'string' ? req.params.code : '';
+  const stop = STOP_CODE.test(raw) ? stops.get(raw) : undefined;
+
+  let html = STOP_SHELL;
+  if (stop) {
+    const title = escapeHtml(`${stop.code} · ${stop.description}, ${stop.roadName}`);
+    html = html
+      .replace(STOP_TITLE_TAG, `<title>${title}</title>`)
+      .replace(STOP_OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`)
+      .replace(
+        STOP_OG_URL_TAG,
+        `<meta property="og:url" content="https://ezbus.sg/stop/${stop.code}" />`,
+      );
+  }
+
+  res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);
 });
 
 /**

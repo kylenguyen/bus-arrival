@@ -526,7 +526,9 @@ function renderWindow() {
     }
     const name =
       index === anchorIdx
-        ? `<strong>${escape(stop.description)}</strong>`
+        ? `<a class="here-link" href="/stop/${escape(stop.code)}"><strong>${escape(
+            stop.description,
+          )}</strong></a>`
         : escape(stop.description);
     return `<li class="${classes.join(' ')}">${mark}${right}${name}</li>`;
   };
