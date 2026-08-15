@@ -250,7 +250,11 @@
             <ul class="services">
               <li class="service">
                 <div class="service-id">
-                  <span class="service-no">61</span>
+                  <!-- An <a> with no href, matching renderServices in app.js where the number
+                       is now a link to the route page: without the href it stays unfocusable
+                       and inert, which is what aria-hidden demands, while still matching any
+                       a.service-no styling so the sample cannot drift from the live board. -->
+                  <a class="service-no">61</a>
                   <!-- Kept in step with VEHICLE.DD in app.js by hand, trails and all: this
                        sample is static markup, and a sample that still showed "DD" would be
                        teaching the reader a label the live board no longer uses. The trail

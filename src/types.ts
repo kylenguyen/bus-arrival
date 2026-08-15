@@ -34,6 +34,82 @@ export interface PlacesResponse {
   places: Place[];
 }
 
+/**
+ * First/last scheduled bus at a stop, HHMM strings exactly as DataMall sends
+ * them (`"0530"`) — parsing them into clock times is display's problem, and a
+ * string survives the leading zero where a number would not.
+ */
+export interface RouteStopTimes {
+  wd: string;
+  sat: string;
+  sun: string;
+}
+
+/**
+ * One BusRoutes record: a service calls at stop `code` as its `seq`-th stop
+ * travelling in `direction`. `firstBus`/`lastBus` are absent when the feed has
+ * no schedule for that day pattern — DataMall writes `-` there.
+ */
+export interface RouteStop {
+  serviceNo: string;
+  direction: 1 | 2;
+  seq: number;
+  code: string;
+  firstBus?: RouteStopTimes;
+  lastBus?: RouteStopTimes;
+}
+
+/** Service-level metadata from BusServices. */
+export interface ServiceInfo {
+  serviceNo: string;
+  operator: string;
+  /** DataMall `Category`: TRUNK, FEEDER, EXPRESS and friends. */
+  category: string;
+  /** Where a loop service turns; empty for a normal two-direction service. */
+  loopDesc: string;
+}
+
+/**
+ * A route stop joined against the stop list for display. When a route record's
+ * code is missing from `StopIndex` — the two feeds can drift for a day — the
+ * join degrades rather than dropping the stop: `description` falls back to the
+ * code, `roadName` to `''` and the coordinate to `0,0`, the same "unknown
+ * coordinate" a handful of real stops already carry.
+ */
+export interface RouteStopJoined {
+  seq: number;
+  code: string;
+  description: string;
+  roadName: string;
+  lat: number;
+  lon: number;
+}
+
+/** A direction's terminus, joined the same way (no `seq` — position says it). */
+export type RouteEndpoint = Omit<RouteStopJoined, 'seq'>;
+
+export interface RouteDirectionPayload {
+  direction: 1 | 2;
+  origin: RouteEndpoint;
+  destination: RouteEndpoint;
+  firstBus: RouteStopTimes | null;
+  lastBus: RouteStopTimes | null;
+  stops: RouteStopJoined[];
+}
+
+export interface RouteResponse {
+  serviceNo: string;
+  operator: string;
+  loop: boolean;
+  /** Null for a normal two-direction service — the wire shape, unlike the
+   *  empty string `RouteService` holds internally. */
+  loopDesc: string | null;
+  /** Direction 1 first, then 2; a loop service carries one entry. */
+  directions: RouteDirectionPayload[];
+  fetchedAt: string;
+  mock: boolean;
+}
+
 export type Load = 'SEA' | 'SDA' | 'LSD' | null;
 
 export interface ArrivalBus {

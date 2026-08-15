@@ -20,6 +20,9 @@ export const config = {
   // The stop list changes a few times a year. Reload daily.
   stopRefreshMs: num(process.env.STOP_REFRESH_MS, 24 * 60 * 60 * 1000),
 
+  // Routes move on the same cadence as stops. Reload daily.
+  routeRefreshMs: num(process.env.ROUTE_REFRESH_MS, 24 * 60 * 60 * 1000),
+
   upstreamTimeoutMs: num(process.env.UPSTREAM_TIMEOUT_MS, 8_000),
 } as const;
 

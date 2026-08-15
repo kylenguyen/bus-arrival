@@ -1,6 +1,14 @@
 import { config } from './config.js';
 import { CircuitBreaker } from './limiter.js';
-import type { ArrivalBus, ArrivalService, BusStop, Load } from './types.js';
+import type {
+  ArrivalBus,
+  ArrivalService,
+  BusStop,
+  Load,
+  RouteStop,
+  RouteStopTimes,
+  ServiceInfo,
+} from './types.js';
 
 /**
  * Client for LTA DataMall.
@@ -18,6 +26,14 @@ import type { ArrivalBus, ArrivalService, BusStop, Load } from './types.js';
  * figure around 5k, and it leaves headroom if LTA lowers the cap.
  */
 const MAX_REQUESTS = 40;
+
+/**
+ * Ceiling for the BusRoutes walk. The route feed is an order of magnitude
+ * bigger than the stop list — ~26k records is ~53 pages at the documented 500
+ * a call — so `MAX_REQUESTS` would truncate it mid-walk. 80 covers that with
+ * the same sort of headroom the stop ceiling carries.
+ */
+const MAX_ROUTE_REQUESTS = 80;
 
 class DataMallError extends Error {
   constructor(
@@ -285,6 +301,128 @@ export const fetchAllStops = async (): Promise<BusStop[]> => {
 
   console.warn(`stop feed hit the ${MAX_REQUESTS}-request ceiling; list may be truncated`);
   return stops;
+};
+
+/**
+ * Raw shapes for BusRoutes (§2.3) and BusServices (§2.2), checked against the
+ * guide on 15 Aug 2026. Named `RawRoute`/`RawServiceInfo` because `RawService`
+ * is already taken by the arrivals payload below — a different shape from the
+ * same upstream noun.
+ */
+interface RawRoute {
+  ServiceNo?: string;
+  Direction?: number | string;
+  StopSequence?: number | string;
+  BusStopCode?: string;
+  WD_FirstBus?: string;
+  WD_LastBus?: string;
+  SAT_FirstBus?: string;
+  SAT_LastBus?: string;
+  SUN_FirstBus?: string;
+  SUN_LastBus?: string;
+}
+
+interface RawServiceInfo {
+  ServiceNo?: string;
+  Operator?: string;
+  Category?: string;
+  LoopDesc?: string;
+}
+
+/** DataMall writes `-` where a stop has no scheduled bus for that day pattern. */
+const toTimes = (wd?: string, sat?: string, sun?: string): RouteStopTimes | undefined => {
+  const clean = (value?: string) => {
+    const trimmed = value?.trim();
+    return trimmed && trimmed !== '-' ? trimmed : '';
+  };
+  const times = { wd: clean(wd), sat: clean(sat), sun: clean(sun) };
+  return times.wd || times.sat || times.sun ? times : undefined;
+};
+
+const toRouteStop = (raw: RawRoute): RouteStop | null => {
+  const serviceNo = raw.ServiceNo?.trim();
+  const code = raw.BusStopCode?.trim();
+  const direction = Number(raw.Direction);
+  const seq = Number(raw.StopSequence);
+  if (!serviceNo || !code || (direction !== 1 && direction !== 2) || !Number.isFinite(seq)) {
+    return null;
+  }
+  return {
+    serviceNo,
+    direction,
+    seq,
+    code,
+    firstBus: toTimes(raw.WD_FirstBus, raw.SAT_FirstBus, raw.SUN_FirstBus),
+    lastBus: toTimes(raw.WD_LastBus, raw.SAT_LastBus, raw.SUN_LastBus),
+  };
+};
+
+/**
+ * Walks the $skip-paginated BusRoutes feed to completion, by the same rules as
+ * `fetchAllStops`: advance by what actually came back, terminate on an empty
+ * page, treat an empty body as failure — the route feed has no non-operating
+ * hours either. Deliberately calls `request()` rather than `guarded()`: the
+ * breaker is arrivals-only, and the scope note on `guarded()` says why.
+ */
+export const fetchAllRoutes = async (): Promise<RouteStop[]> => {
+  const routes: RouteStop[] = [];
+  let skip = 0;
+
+  for (let attempt = 0; attempt < MAX_ROUTE_REQUESTS; attempt += 1) {
+    const body = await request('BusRoutes', { $skip: String(skip) });
+    if (body === EMPTY_BODY) throw new DataMallError('DataMall BusRoutes returned an empty body');
+
+    const batch = (body as { value?: RawRoute[] }).value ?? [];
+    if (batch.length === 0) return routes;
+    skip += batch.length;
+
+    for (const raw of batch) {
+      const stop = toRouteStop(raw);
+      if (stop) routes.push(stop);
+    }
+  }
+
+  console.warn(`route feed hit the ${MAX_ROUTE_REQUESTS}-request ceiling; list may be truncated`);
+  return routes;
+};
+
+const toServiceInfo = (raw: RawServiceInfo): ServiceInfo | null => {
+  const serviceNo = raw.ServiceNo?.trim();
+  if (!serviceNo) return null;
+  return {
+    serviceNo,
+    operator: raw.Operator?.trim() ?? '',
+    category: raw.Category?.trim() ?? '',
+    loopDesc: raw.LoopDesc?.trim() ?? '',
+  };
+};
+
+/**
+ * Walks the BusServices feed — one record per service per direction, so a
+ * two-direction service appears twice; the caller's map collapses that. A few
+ * hundred services is ~2 pages, so `MAX_REQUESTS` is plenty. Unguarded for the
+ * same reason as the other bulk walks — see the scope note on `guarded()`.
+ */
+export const fetchAllServices = async (): Promise<ServiceInfo[]> => {
+  const services: ServiceInfo[] = [];
+  let skip = 0;
+
+  for (let attempt = 0; attempt < MAX_REQUESTS; attempt += 1) {
+    const body = await request('BusServices', { $skip: String(skip) });
+    if (body === EMPTY_BODY) throw new DataMallError('DataMall BusServices returned an empty body');
+
+    const batch = (body as { value?: RawServiceInfo[] }).value ?? [];
+    if (batch.length === 0) return services;
+    skip += batch.length;
+
+    for (const raw of batch) {
+      const service = toServiceInfo(raw);
+      if (service) services.push(service);
+    }
+  }
+
+  console.warn(`service feed hit the ${MAX_REQUESTS}-request ceiling; list may be truncated`);
+  return services;
 };
 
 interface RawBus {

@@ -5,6 +5,7 @@ import { arrivalsForMany } from './arrivals.js';
 import { config, mockMode } from './config.js';
 import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
+import { RouteIndex } from './routes.js';
 import { StopIndex } from './stops.js';
 import type {
   ArrivalsResponse,
@@ -13,6 +14,9 @@ import type {
   BusStop,
   Place,
   PlacesResponse,
+  RouteDirectionPayload,
+  RouteEndpoint,
+  RouteResponse,
 } from './types.js';
 
 /** DataMall documents BusStopCode as a 5-digit identifier. Junk is rejected
@@ -21,6 +25,9 @@ const STOP_CODE = /^\d{5}$/;
 
 /** Six digits is a Singapore postal code and nothing else. */
 const POSTAL_CODE = /^\d{6}$/;
+
+/** DataMall spells service numbers like `61` and `972M` — short alphanumerics. */
+const SERVICE_NO = /^[A-Za-z0-9]{1,5}$/;
 
 /** Longer than any Singapore address; the same ceiling `PlaceIndex` applies. */
 const MAX_QUERY = 64;
@@ -31,6 +38,7 @@ const DEFAULT_NEARBY = 8;
 
 const stops = new StopIndex();
 const places = new PlaceIndex();
+const routes = new RouteIndex();
 
 const app = express();
 app.disable('x-powered-by');
@@ -79,6 +87,10 @@ app.get('/healthz', (_req, res) => {
     stopsLoadedAt: stops.loadedAt?.toISOString() ?? null,
     places: places.size,
     placesGeneratedAt: places.generatedAt,
+    // Observability only, deliberately outside `ready`: the route feed serves
+    // the route page, and the board's readiness must never depend on it.
+    routes: routes.size,
+    routesLoadedAt: routes.loadedAt?.toISOString() ?? null,
     mock: mockMode,
     ...upstreamStats(),
   });
@@ -232,6 +244,79 @@ app.get('/api/places', (req, res) => {
   res.json(body);
 });
 
+/**
+ * Joins a route stop code against the stop list for display. A code missing
+ * from `StopIndex` — the two feeds can drift for a day — degrades instead of
+ * dropping the stop: the code stands in as its own description, and the `0,0`
+ * coordinate is the same "unknown" a handful of real stops already carry.
+ */
+const joinRouteStop = (code: string): RouteEndpoint => {
+  const stop = stops.get(code);
+  return stop
+    ? { code: stop.code, description: stop.description, roadName: stop.roadName, lat: stop.lat, lon: stop.lon }
+    : { code, description: code, roadName: '', lat: 0, lon: 0 };
+};
+
+/**
+ * One service's full route, both directions, stops joined with names and
+ * coordinates. Carries nothing about the caller — a service number is public
+ * knowledge — so unlike `/api/places` a shared cache is welcome here, and
+ * `max-age=300` sits well under the daily refresh of the feed behind it.
+ */
+app.get('/api/route/:service', (req, res) => {
+  const raw = typeof req.params.service === 'string' ? req.params.service : '';
+  if (!SERVICE_NO.test(raw)) {
+    res.status(400).json({ error: 'service must be 1-5 letters or digits' });
+    return;
+  }
+
+  const service = routes.get(raw);
+  if (!service) {
+    res.status(404).json({ error: 'no such service' });
+    return;
+  }
+
+  const directions: RouteDirectionPayload[] = [];
+  for (const direction of [1, 2] as const) {
+    const found = service.directions.get(direction);
+    const firstCode = found?.stops[0];
+    const lastCode = found?.stops[found.stops.length - 1];
+    if (!found || firstCode === undefined || lastCode === undefined) continue;
+    directions.push({
+      direction,
+      origin: joinRouteStop(firstCode),
+      destination: joinRouteStop(lastCode),
+      firstBus: found.firstBus,
+      lastBus: found.lastBus,
+      // Re-numbered 1..n: `RouteDirection` holds codes in StopSequence order
+      // but DataMall's raw sequence numbers can skip, and the page wants a
+      // dense index, not the feed's bookkeeping.
+      stops: found.stops.map((code, i) => ({ seq: i + 1, ...joinRouteStop(code) })),
+    });
+  }
+
+  const body: RouteResponse = {
+    serviceNo: service.serviceNo,
+    operator: service.operator,
+    loop: service.loop,
+    loopDesc: service.loopDesc === '' ? null : service.loopDesc,
+    directions,
+    fetchedAt: new Date().toISOString(),
+    mock: mockMode,
+  };
+  res.set('cache-control', 'public, max-age=300');
+  res.json(body);
+});
+
+/**
+ * The route page shell. Deliberately lenient about `:service` — the client
+ * renders its own "no such service" state, and a 404 here would swap that page
+ * for the browser's. Same 1 h cache as the rest of `public/`.
+ */
+app.get('/bus/:service', (_req, res) => {
+  res.sendFile(path.join(import.meta.dirname, '..', 'public', 'route.html'), { maxAge: '1h' });
+});
+
 app.use(
   express.static(path.join(import.meta.dirname, '..', 'public'), {
     maxAge: '1h',
@@ -250,6 +335,11 @@ const server = app.listen(config.port, () => {
 // startup probe even if DataMall is slow.
 void stops.start();
 
+// Routes ride the same pattern, with one difference: the ~26k-record walk can
+// take a while, and nothing gates on it — /healthz reports its count without
+// ever letting it hold readiness.
+void routes.start();
+
 // And the addresses, unconditionally — `mockMode` is about the DataMall key and
 // this data is not LTA's. The consequence, documented rather than hidden: in
 // mock mode the finder holds 121k real addresses over 12 synthetic stops, so a
@@ -260,6 +350,7 @@ places.load();
 const shutdown = (signal: string) => {
   console.log(`${signal} received, shutting down`);
   stops.stop();
+  routes.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 };

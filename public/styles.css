@@ -1453,3 +1453,636 @@ input[type='search']::-webkit-search-cancel-button {
     padding-right: 1rem;
   }
 }
+
+/* --- route page (/bus/:service) — the Approach Window ---------------------
+   Everything below serves route.html/route.js and the board's service-number
+   link. Same two colour families as the board and the same jobs: `--accent`
+   is time and interaction, `--muted`/`--border` are the quiet chrome, and the
+   crowding tokens appear only where the board's own `.eta-load` pills already
+   bring them into the anchor panel. Square everywhere — the spine's nodes are
+   set-square rectangles, not dots, for the same reason `--radius` is 4px. */
+
+/* The board's service number is a link now (it opens this page). It must keep
+   the stencil face and the text colour it had as a span: an accent, underlined
+   number in the first column would out-shout the minutes beside it, and the
+   whole card already telegraphs "tappable" better than an underline does. */
+a.service-no {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The wordmark is a link on the route page — same ink as the h1 it sits in,
+   because the `ez` span carries the accent and an underline under a logo reads
+   as a rendering fault. Harmless on the board, where the h1 holds no anchor. */
+h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* One line of way-back over the route header. The negative margin keeps the
+   44px tap target from costing a whole row of air under the masthead. */
+.route-main .back {
+  margin: -0.5rem 0 0.1rem;
+  font-size: 0.8rem;
+}
+
+.route-main .back a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+/* The route header: number, ends, meta — a raised plate like `.card-head`. */
+.rt-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+
+/* The stencil face's third job, same rule as the other two: this number is
+   matched against the blind on the front of the bus. */
+.rt-no {
+  font-family: var(--display);
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rt-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.rt-ends {
+  display: block;
+  font-weight: 650;
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.rt-meta {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Two directions, one strip. The buttons are flush inside one border so the
+   pair reads as a toggle rather than two buttons that happen to be adjacent. */
+.dir-toggle {
+  display: flex;
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.dir-toggle button {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.3rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.dir-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.dir-toggle button:active {
+  background: var(--surface-2);
+}
+
+.dir-toggle button.on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* A loop has no second direction, so it gets a statement instead of a toggle.
+   Muted outline on purpose — never a crowding colour: it is a fact about the
+   route, not a warning about a bus. */
+.loop-badge {
+  display: inline-block;
+  margin: 0 0 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Section eyebrow — the same treatment as `.services-head`. */
+.rt-sec {
+  margin: 0.75rem 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* --- the spine ---
+   A vertical run of stops. Nodes are squares drawn with borders — set-square,
+   like everything else here — and the rail is a 2px line behind them. The
+   floats put codes, ETAs and chevrons on the right edge; they are emitted
+   *before* the stop name in the markup so a wrapping name never drops them. */
+.spine {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spine li {
+  position: relative;
+  padding: 0.42rem 0.2rem 0.42rem 1.7rem;
+  font-size: 0.9rem;
+}
+
+.spine li::before {
+  content: '';
+  position: absolute;
+  left: 0.62rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.spine li:first-child::before {
+  top: 50%;
+}
+
+.spine li:last-child::before {
+  bottom: 50%;
+}
+
+.spine li::after {
+  content: '';
+  position: absolute;
+  left: 0.38rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  background: var(--surface);
+  border: 2px solid var(--muted);
+}
+
+.spine li.term {
+  font-weight: 700;
+}
+
+.spine li.term::after {
+  background: var(--text);
+  border-color: var(--text);
+}
+
+/* The anchor's node: accent, and a step larger — the one square on the rail
+   that answers "which of these is mine". */
+.spine li.here::after {
+  background: var(--accent);
+  border-color: var(--accent);
+  width: 9px;
+  height: 9px;
+  left: 0.32rem;
+}
+
+/* Behind the inferred bus: still on the route, no longer on the way here. */
+.spine li.passed {
+  color: var(--muted);
+}
+
+.spine li.passed::after {
+  border-color: var(--border);
+  background: var(--border);
+}
+
+/* A fold: the rail goes dashed where stops are hidden, and the row is one
+   full-width button so "show" is a thumb target, not a phrase. */
+.spine li.fold {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.spine li.fold::before {
+  width: 0;
+  background: transparent;
+  border-left: 2px dashed var(--border);
+}
+
+.spine li.fold::after {
+  display: none;
+}
+
+.fold-btn {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.fold-btn b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* "Departs terminus" — the honest stand-in for upstream rows that do not exist. */
+.spine li.depart {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.spine li.depart::after {
+  display: none;
+}
+
+.spine .stop-code {
+  float: right;
+  padding-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spine .eta-inline {
+  float: right;
+  font-size: 0.85rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 0.7rem, not the mockup's 0.65 — nothing on a card goes below the sunlight
+   floor, an ETA unit least of all. */
+.spine .eta-inline .eta-unit {
+  font-size: 0.7rem;
+}
+
+/* The inline ETA's placeholder while the first arrivals batch is in flight. */
+.sk-eta-in {
+  display: inline-block;
+  width: 2rem;
+  height: 0.9rem;
+  vertical-align: middle;
+}
+
+/* The inferred bus. Absolutely placed at the top edge of the row it is
+   approaching, so it reads as *between* two stops — which is all the timings
+   can actually support (see BUS_POSITION_LABEL). No animation: a mark that is
+   inference, not telemetry, has not earned motion. */
+.spine .bus-mark {
+  position: absolute;
+  left: 1.05rem;
+  top: -0.55rem;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+/* Picker rows: every stop a tap target. The chevron is the affordance. */
+.spine li.pick {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* Flex on `.pick` opts out of the float layout, so the chevron rides the
+   right edge via auto margin instead. */
+.spine li.pick .chev {
+  order: 1;
+  margin-left: auto;
+  padding: 0 0.2rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.spine li.pick:active {
+  background: var(--surface-2);
+}
+
+/* The Change morph's "you are here" tag. 0.7rem — the mockup's 0.62 sits
+   under the floor. */
+.spine .cur-tag {
+  order: 1;
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Rows that are the current anchor inside the Change morph are flex too. */
+.spine li.here.pick {
+  cursor: pointer;
+}
+
+/* --- the anchor panel ---
+   The live card docked onto the spine at the anchor. The accent border plus
+   the 3px inset bar is the pinned-card idiom: "the one you chose". The inset
+   is COMPOSED with var(--shadow) — never `none` in that list; dark mode's
+   shadow is a transparent shadow precisely so this composition survives. */
+.here-panel {
+  margin: 0.25rem 0 0.25rem 1.55rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow);
+  overflow: hidden;
+}
+
+.here-panel .hp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  /* The head's own fill paints over the panel's inset bar (the `.card.pinned
+     .card-head` lesson), so the same three pixels are restated here. */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.hp-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.hp-name {
+  font-weight: 650;
+  font-size: 0.9rem;
+}
+
+.hp-sub {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Change is a bare accent verb; the negative margins buy the 44px target
+   without inflating the head. */
+.hp-change {
+  flex: none;
+  min-height: 2.75rem;
+  margin: -0.45rem -0.35rem;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.hp-change:active {
+  background: var(--surface);
+}
+
+/* --- chips ---
+   The provenance line over the window: where this anchor came from, and the
+   one-word way to change it. */
+.note-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.55rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.note-chip .chip-act {
+  flex: none;
+  margin-left: auto;
+  min-height: 2.75rem;
+  padding: 0 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The way back out of the Change morph. Accent outline: it is the one control
+   on that screen that restores rather than chooses. */
+.keep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  margin: 0 0 0.55rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.keep-chip:active {
+  background: var(--surface-2);
+}
+
+/* --- the picker's doors --- */
+
+.rt-search {
+  margin: 0 0 0.5rem;
+}
+
+/* The location door: accent outline because it acts, muted while it waits.
+   Neutral-bordered when busy so "Locating…" does not look tappable. */
+.loc-door {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2.75rem;
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.loc-door:active {
+  background: var(--surface-2);
+}
+
+.loc-door.busy {
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* The refusal line under the door — inline and muted, because a denial here is
+   not an error: the other two doors still work. */
+.door-note {
+  margin: -0.15rem 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* --- search results ---
+   They replace the spine and are the pick list. Match tinting is colour, not
+   background — the finder's `mark` idiom. */
+.rt-results {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.rt-results li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.rt-results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.rt-results li:active {
+  background: var(--surface-2);
+}
+
+.r-name {
+  min-width: 0;
+  font-weight: 650;
+}
+
+.r-name mark,
+.r-sub mark {
+  background: none;
+  color: var(--accent);
+}
+
+.r-sub {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the guard ---
+   Holds and offers instead of assuming. Neutral surfaces — border and muted —
+   with the verbs alone in accent; crowding colours never appear here. */
+.guard {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 0.85rem;
+}
+
+.g-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  margin-top: 0.1rem;
+}
+
+.g-actions button,
+.g-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The honesty line: the bus mark is read from timings, not GPS. 0.72rem sits
+   above the 0.7rem floor. */
+.honesty {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* --- skeleton spine ---
+   The `.sk` idiom over the spine's own shape, so a slow /api/route reads as a
+   route arriving. `.skeleton` carries the pulse and its reduced-motion stop. */
+.sk-rtno {
+  width: 3rem;
+  height: 2.1rem;
+}
+
+.sk-spine li .sk {
+  height: 0.9rem;
+  width: 55%;
+}
+
+.sk-spine li:nth-child(3n) .sk {
+  width: 40%;
+}
+
+.sk-spine li:nth-child(3n + 1) .sk {
+  width: 62%;
+}
+
+.sk-spine li::after {
+  border-color: var(--border);
+  background: var(--border);
+}
+
+/* Very narrow phones: the spine gives up the right-edge stop codes before it
+   crushes the names; the anchor panel's arrivals already drop their third
+   column through the board's own 21.5rem rule above. */
+@media (max-width: 21.5rem) {
+  .spine .stop-code {
+    display: none;
+  }
+
+  .rt-no {
+    font-size: 1.8rem;
+  }
+}

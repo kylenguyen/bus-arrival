@@ -1,4 +1,4 @@
-import type { ArrivalService, BusStop } from './types.js';
+import type { ArrivalService, BusStop, RouteStop, RouteStopTimes, ServiceInfo } from './types.js';
 
 /**
  * Synthetic stand-in for the DataMall BusStops feed, used only when no
@@ -35,6 +35,51 @@ const SERVICES_BY_STOP: Record<string, string[]> = {
   '50051': ['2', '24', '39', '168'],
   '60061': ['5', '61'],
 };
+
+/**
+ * Each service's journey through the mock world, hand-ordered. This is the
+ * ordered inverse of SERVICES_BY_STOP and MUST stay that way: a service appears
+ * on a stop's arrival board iff that stop appears in the service's route, or
+ * mock mode contradicts itself between the board and the route page.
+ * `src/mock.test.ts` pins the invariant — edit the two together.
+ *
+ * The inverse map confines every service to one road, so journeys are short;
+ * the stop descriptions decide their shape. 'Opp X' pairs are opposite kerbs,
+ * so the return leg uses the other code; 'Bef X' / 'Aft X' / station-exit pairs
+ * sit on one kerb, so both legs call at both in reverse order; interchange and
+ * park stops are a terminus each leg starts or ends at. '52' is the one loop:
+ * out to the opposite kerb and back, origin visited twice, single direction.
+ */
+const ROUTE_SHAPES: Array<{ serviceNo: string; directions: string[][]; loopDesc?: string }> = [
+  // Demo Ave 1 — 10001 (Blk 101) faces 10009 (Opp Blk 101).
+  { serviceNo: '52', directions: [['10001', '10009', '10001']], loopDesc: 'Opp Blk 101' },
+  { serviceNo: '167', directions: [['10001'], ['10009']] },
+  { serviceNo: '985', directions: [['10001'], ['10001']] },
+  // Demo Ave 2 — both station exits sit on one kerb.
+  { serviceNo: '74', directions: [['10011', '10019'], ['10019', '10011']] },
+  { serviceNo: '151', directions: [['10011', '10019'], ['10019', '10011']] },
+  { serviceNo: '154', directions: [['10011'], ['10011']] },
+  { serviceNo: '186', directions: [['10011'], ['10011']] },
+  // Sample Rd — opposite kerbs.
+  { serviceNo: '36', directions: [['20021'], ['20029']] },
+  { serviceNo: '77', directions: [['20021'], ['20029']] },
+  { serviceNo: '106', directions: [['20021'], ['20021']] },
+  // Example Cres — 'Bef Example Hawker Ctr' precedes the hawker centre on one run.
+  { serviceNo: '13', directions: [['30039', '30031'], ['30031', '30039']] },
+  { serviceNo: '31', directions: [['30039', '30031'], ['30031', '30039']] },
+  { serviceNo: '43', directions: [['30031'], ['30031']] },
+  // Placeholder St — 'Aft Placeholder Poly' follows the poly on one run.
+  { serviceNo: '66', directions: [['40041', '40049'], ['40049', '40041']] },
+  { serviceNo: '169', directions: [['40041', '40049'], ['40049', '40041']] },
+  { serviceNo: '900', directions: [['40041'], ['40041']] },
+  // Testbed Interchange and Fixture Park — single stops, a terminus for each leg.
+  { serviceNo: '2', directions: [['50051'], ['50051']] },
+  { serviceNo: '24', directions: [['50051'], ['50051']] },
+  { serviceNo: '39', directions: [['50051'], ['50051']] },
+  { serviceNo: '168', directions: [['50051'], ['50051']] },
+  { serviceNo: '5', directions: [['60061'], ['60061']] },
+  { serviceNo: '61', directions: [['60061'], ['60061']] },
+];
 
 const OPERATORS = ['SBST', 'SMRT', 'TTS', 'GAS'];
 const LOADS = ['SEA', 'SEA', 'SDA', 'LSD'] as const;
@@ -82,3 +127,50 @@ export const mockArrivals = (stopCode: string, now = new Date()): ArrivalService
     };
   });
 };
+
+const hhmm = (minuteOfDay: number): string => {
+  const m = ((minuteOfDay % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}${String(m % 60).padStart(2, '0')}`;
+};
+
+const firstLast = (minuteOfDay: number): RouteStopTimes => ({
+  wd: hhmm(minuteOfDay),
+  sat: hhmm(minuteOfDay + 5),
+  sun: hhmm(minuteOfDay + 10),
+});
+
+/**
+ * Flattened route records in the shape the live BusRoutes mapper produces.
+ * First/last bus times sit on sequence-1 records only, matching where the
+ * RouteIndex reads them from.
+ */
+export const MOCK_ROUTES: RouteStop[] = ROUTE_SHAPES.flatMap(({ serviceNo, directions }) =>
+  directions.flatMap((codes, dirIndex) =>
+    codes.map((code, i): RouteStop => {
+      const record: RouteStop = {
+        serviceNo,
+        direction: dirIndex === 0 ? 1 : 2,
+        seq: i + 1,
+        code,
+      };
+      if (i === 0) {
+        const seed = hash(serviceNo);
+        record.firstBus = firstLast(5 * 60 + 30 + (seed % 30));
+        record.lastBus = firstLast(23 * 60 + (seed % 45));
+      }
+      return record;
+    }),
+  ),
+);
+
+/** Per-service metadata matching MOCK_ROUTES; loopDesc set on the one loop. */
+export const MOCK_SERVICE_INFO: ServiceInfo[] = ROUTE_SHAPES.map(({ serviceNo, loopDesc }) => ({
+  serviceNo,
+  operator: OPERATORS[hash(serviceNo) % OPERATORS.length] ?? 'SBST',
+  category: loopDesc === undefined ? 'TRUNK' : 'FEEDER',
+  loopDesc: loopDesc ?? '',
+}));
+
+export const mockRoutes = (): RouteStop[] => MOCK_ROUTES;
+
+export const mockServiceInfo = (): ServiceInfo[] => MOCK_SERVICE_INFO;

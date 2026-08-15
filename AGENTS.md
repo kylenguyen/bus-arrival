@@ -71,7 +71,7 @@ convenience for capability, the default answer is no. Concretely:
 
 - First paint should be one network round trip. `/api/board` returns stops and
   arrivals together for exactly that reason — do not split it back apart.
-- No login, no account, no server-side user state. Four `localStorage` keys, and
+- No login, no account, no server-side user state. Five `localStorage` keys, and
   the server stores nothing about anyone:
   - `bus-board.pins.v1` — the pinned stops. Orthogonal to the rest: a pin is not
     a door, and changing door leaves them alone.
@@ -105,6 +105,17 @@ convenience for capability, the default answer is no. Concretely:
     inheriting silently: it holds up to five labelled addresses, plausibly home
     and work, in cleartext on the device. Never transmitted, never seen by the
     server, cleared with the other three.
+  - `bus-route.anchor.v1` — the route page's remembered boarding stop per
+    service, `{"61": "43179", …}`, most recently used last and capped at 30
+    services (`ANCHOR_LRU_MAX` in [public/route-logic.js](public/route-logic.js)).
+    Written only when a stop is actually anchored — a tapped board card's
+    `?stop=`, a picker choice, a nearest-stop inference, the guard's "use it
+    anyway" — and **never** for the direction toggle's translated return stop,
+    which is displayed and not persisted, so toggling back restores the stop
+    the user actually chose. A remembered code the route no longer serves
+    drops itself on the next visit, after its notice has been shown once.
+    Orthogonal to the board's keys: it names stops per service, not a door,
+    and changing the board's origin leaves it alone.
 - No new user-facing configuration. If a setting would need explaining, pick a
   sensible default instead. The first-visit entry choice is not an exception to
   this: a setting is something the user maintains and can be wrong about later,

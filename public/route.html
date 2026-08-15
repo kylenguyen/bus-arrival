@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en-SG">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Tints the browser chrome so the page does not end at a white seam.
+         These two duplicate `--bg` in each scheme and cannot read a CSS variable.
+         Keep them in step with the token blocks at the top of styles.css. -->
+    <meta name="theme-color" content="#e7ebe7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Where a bus route goes, and watch your bus approach your stop." />
+    <title>bus route · ezbus</title>
+    <!-- Fetched in parallel with route.js, which imports them, rather than after.
+         route-logic.js itself imports origin.js, so both are named here. -->
+    <link rel="modulepreload" href="/origin.js" />
+    <link rel="modulepreload" href="/route-logic.js" />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Same reasoning as index.html: preloaded so the stencilled service number
+         swaps at first paint rather than a beat after it. `crossorigin` is
+         required even same-origin — fonts always fetch in CORS mode. -->
+    <link
+      rel="preload"
+      href="/fonts/archivo-narrow-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230a6a72'/><g fill='none' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round'><rect x='6' y='7' width='20' height='14' rx='3'/><path d='M6 14h20'/></g><g fill='%23ffffff'><circle cx='11' cy='24' r='2'/><circle cx='21' cy='24' r='2'/></g></svg>"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-row">
+        <!-- Same wordmark as the board, but a link: on this page it is the way
+             back as well as the name, and the board is one tap away wherever
+             you are in the route. -->
+        <h1><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></h1>
+      </div>
+    </header>
+
+    <main class="route-main">
+      <p class="back"><a href="/">← Back to board</a></p>
+
+      <!-- The route header: number, ends, meta, and the direction toggle (or the
+           loop badge). route.js rewrites this once /api/route lands; until then
+           it holds the header's skeleton so the wait has the answer's shape. -->
+      <div id="rt-head">
+        <div class="rt-head skeleton" aria-hidden="true">
+          <span class="sk sk-rtno"></span>
+          <div class="rt-title">
+            <span class="sk sk-name"></span>
+            <span class="sk sk-sub"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Provenance chips, stale-stop notices, the keep chip: everything that
+           explains where the anchor came from or offers the way back. -->
+      <div id="rt-notices"></div>
+
+      <!-- The spine — approach window, picker, guard, or the not-found page.
+           Starts as a skeleton spine so a slow /api/route reads as a route
+           arriving rather than an empty page. -->
+      <section id="rt-body" aria-label="Route stops">
+        <ul class="spine sk-spine skeleton" aria-hidden="true">
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+          <li><span class="sk"></span></li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="status">—</span>
+      <span class="dot">·</span>
+      <span>* scheduled, not tracked</span>
+      <span class="dot">·</span>
+      <span>Data © LTA, via DataMall</span>
+    </footer>
+
+    <script src="/route.js" type="module"></script>
+  </body>
+</html>

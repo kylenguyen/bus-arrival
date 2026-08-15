@@ -659,7 +659,7 @@ function renderServices(stop) {
       (service) => `
       <li class="service">
         <div class="service-id">
-          <span class="service-no">${escape(service.serviceNo)}</span>
+          <a class="service-no" href="/bus/${encodeURIComponent(service.serviceNo)}?stop=${escape(stop.code)}">${escape(service.serviceNo)}</a>
           ${renderTags(service.buses[0], now)}
         </div>
         ${renderEta(service.buses[0], 0, now)}
