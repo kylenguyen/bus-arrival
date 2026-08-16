@@ -10,15 +10,19 @@
     <meta name="theme-color" content="#e7ebe7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="Where this Singapore bus route goes, stop by stop, and live timings as your bus approaches your stop." />
+    <!-- Server-injected meta, same bargain as stop.html: the five tags below
+         (title, og:title, og:description, og:url, canonical) are replacement
+         targets — `/bus/:service` in src/index.ts swaps each whole tag, by
+         exact string match, for a per-service version when the service is
+         known. The tokens are the generic tags themselves, so this file served
+         unreplaced (express.static, or an unknown service) is already valid,
+         sensibly generic HTML: a junk URL declares the homepage its canonical
+         and stays out of the index. Edit a tag here and its constant in
+         src/index.ts in the same commit, or the injection silently stops. -->
     <title>bus routes in Singapore · ezbus</title>
     <meta property="og:title" content="bus routes in Singapore · ezbus" />
     <meta property="og:description" content="Where this Singapore bus route goes, stop by stop, and live timings as your bus approaches your stop." />
-    <!-- Server-injection target, same bargain as stop.html: `ROUTE_CANONICAL_TAG`
-         in src/index.ts matches this tag verbatim, and the per-service injection
-         (`/bus/:service`) swaps it for the service's own canonical. Served raw,
-         the generic tag is correct — a junk URL declares the homepage its
-         canonical and stays out of the index. Edit this tag and its constant in
-         the same commit, or the injection silently stops. -->
+    <meta property="og:url" content="https://ezbus.sg/bus" />
     <link rel="canonical" href="https://ezbus.sg/" />
     <meta property="og:site_name" content="ezbus" />
     <meta property="og:type" content="website" />

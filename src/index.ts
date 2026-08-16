@@ -6,7 +6,7 @@ import { arrivalsForMany } from './arrivals.js';
 import { config, mockMode } from './config.js';
 import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
-import { RouteIndex } from './routes.js';
+import { RouteIndex, type RouteDirection } from './routes.js';
 import { buildSitemap } from './sitemap.js';
 import { StopIndex } from './stops.js';
 import type {
@@ -288,6 +288,21 @@ const joinRouteStop = (code: string): RouteEndpoint => {
 };
 
 /**
+ * A direction's two ends, joined through `joinRouteStop`. Null when the
+ * direction is missing or empty — the same "skip it" the API's direction loop
+ * always applied. Shared by `/api/route/:service`, the meta injection on
+ * `/bus/:service`, and (T6) the route page's static body.
+ */
+const directionEndpoints = (
+  direction: RouteDirection | undefined,
+): { origin: RouteEndpoint; destination: RouteEndpoint } | null => {
+  const firstCode = direction?.stops[0];
+  const lastCode = direction?.stops[direction.stops.length - 1];
+  if (firstCode === undefined || lastCode === undefined) return null;
+  return { origin: joinRouteStop(firstCode), destination: joinRouteStop(lastCode) };
+};
+
+/**
  * One service's full route, both directions, stops joined with names and
  * coordinates. Carries nothing about the caller — a service number is public
  * knowledge — so unlike `/api/places` a shared cache is welcome here, and
@@ -309,13 +324,12 @@ app.get('/api/route/:service', (req, res) => {
   const directions: RouteDirectionPayload[] = [];
   for (const direction of [1, 2] as const) {
     const found = service.directions.get(direction);
-    const firstCode = found?.stops[0];
-    const lastCode = found?.stops[found.stops.length - 1];
-    if (!found || firstCode === undefined || lastCode === undefined) continue;
+    const endpoints = directionEndpoints(found);
+    if (!found || !endpoints) continue;
     directions.push({
       direction,
-      origin: joinRouteStop(firstCode),
-      destination: joinRouteStop(lastCode),
+      origin: endpoints.origin,
+      destination: endpoints.destination,
       firstBus: found.firstBus,
       lastBus: found.lastBus,
       // Re-numbered 1..n: `RouteDirection` holds codes in StopSequence order
@@ -428,15 +442,20 @@ const STOP_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/stop"
 const STOP_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
 
 /**
- * route.html's canonical tag, verbatim — the same bargain as the stop constants
- * above, defined in the same commit as the shell edit so the pair cannot drift.
- * Nothing replaces it yet: the per-service injection on `/bus/:service` (T4 of
- * docs/seo-implementation-plan.md) swaps it for `https://ezbus.sg/bus/<serviceNo>`.
- * Until then every route URL declares the homepage canonical, which keeps
- * junk-parameter URLs out of the index rather than in it under the wrong name.
+ * The route page shell and its replacement targets — the same bargain as the
+ * stop constants above: each constant is route.html's generic tag verbatim, so
+ * the file served unreplaced (unknown service, bad param, or `/route.html` via
+ * express.static) is already valid generic HTML, and the generic canonical
+ * points a junk URL at the homepage. Edit a tag there and its constant here in
+ * the same commit, or the injection silently stops.
  */
+const ROUTE_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'route.html'), 'utf8');
+const ROUTE_TITLE_TAG = '<title>bus routes in Singapore · ezbus</title>';
+const ROUTE_OG_TITLE_TAG = '<meta property="og:title" content="bus routes in Singapore · ezbus" />';
+const ROUTE_OG_DESC_TAG =
+  '<meta property="og:description" content="Where this Singapore bus route goes, stop by stop, and live timings as your bus approaches your stop." />';
+const ROUTE_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/bus" />';
 const ROUTE_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
-void ROUTE_CANONICAL_TAG; // referenced from T4's injection; kept live until then
 
 /** Escapes text bound for the stop shell's meta tags — attribute values
  *  included, hence the quotes. */
@@ -478,15 +497,44 @@ app.get('/stop/:code', (req, res) => {
 /**
  * The route page shell. Deliberately lenient about `:service` — the client
  * renders its own "no such service" state, and a 404 here would swap that page
- * for the browser's. Same revalidation as the rest of `public/`.
+ * for the browser's. When the service is known, the title, OG tags and
+ * canonical are injected per-request, endpoint names joined through
+ * `directionEndpoints`; anything else gets the generic shell untouched.
  *
- * `headers` rather than `maxAge`: `send` derives its own `Cache-Control` from
- * `maxAge`, so passing both would put two intentions in one response.
+ * The canonical (and og:url) carries `service.serviceNo` — DataMall's own
+ * spelling, not the URL's — so `/bus/972m` declares `/bus/972M` its canonical
+ * and case-variant URLs collapse to one indexed page per service.
  */
-app.get('/bus/:service', (_req, res) => {
-  res.sendFile(path.join(import.meta.dirname, '..', 'public', 'route.html'), {
-    headers: { 'Cache-Control': STATIC_CACHE_CONTROL },
-  });
+app.get('/bus/:service', (req, res) => {
+  const raw = typeof req.params.service === 'string' ? req.params.service : '';
+  const service = SERVICE_NO.test(raw) ? routes.get(raw) : null;
+  // Direction 1 names the page; a service the feed only knows backwards
+  // (directions can drift for a day) still gets metadata from direction 2.
+  const endpoints = service
+    ? (directionEndpoints(service.directions.get(1)) ?? directionEndpoints(service.directions.get(2)))
+    : null;
+
+  let html = ROUTE_SHELL;
+  if (service && endpoints) {
+    const title = escapeHtml(
+      service.loop
+        ? `bus ${service.serviceNo} · loop at ${service.loopDesc || endpoints.origin.description} · ezbus`
+        : `bus ${service.serviceNo} · ${endpoints.origin.description} → ${endpoints.destination.description} · ezbus`,
+    );
+    const description = escapeHtml(
+      `Bus ${service.serviceNo} route: all stops from ${endpoints.origin.description} to ` +
+        `${endpoints.destination.description}, with live arrival times. Operated by ${service.operator}.`,
+    );
+    const url = `https://ezbus.sg/bus/${escapeHtml(service.serviceNo)}`;
+    html = html
+      .replace(ROUTE_TITLE_TAG, `<title>${title}</title>`)
+      .replace(ROUTE_OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`)
+      .replace(ROUTE_OG_DESC_TAG, `<meta property="og:description" content="${description}" />`)
+      .replace(ROUTE_OG_URL_TAG, `<meta property="og:url" content="${url}" />`)
+      .replace(ROUTE_CANONICAL_TAG, `<link rel="canonical" href="${url}" />`);
+  }
+
+  res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);
 });
 
 app.use(
