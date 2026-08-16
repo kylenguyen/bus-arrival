@@ -188,8 +188,13 @@ main {
    brand and `ezbus.sg` is how anyone arrives here.
 
    `flex: none` for the same reason `#origin-chip` gets `min-width: 0`: they share a
-   360px row and only one of the two is allowed to give way, and it is not this one. */
-h1 {
+   360px row and only one of the two is allowed to give way, and it is not this one.
+
+   `.wordmark` rides every wordmark rule: on stop.html the mark is a <p>, because
+   that page's h1 is the stop name on the plate (see h1.card-title in the stop-page
+   section below), and two h1s would make the heading ambiguous to everyone. */
+h1,
+.wordmark {
   margin: 0;
   flex: none;
   font-family: var(--display);
@@ -202,7 +207,8 @@ h1 {
 /* The turquoise sits on the mark itself rather than on a filled band: at the top of a
    working board a full-width accent bar is a lot of colour spent on something the
    returning user has already read a thousand times. */
-h1 .mark-ez {
+h1 .mark-ez,
+.wordmark .mark-ez {
   color: var(--accent);
 }
 
@@ -215,13 +221,15 @@ h1 .mark-ez {
    The ring is spelled out because the `:focus-visible` rule below covers only
    `button` and `input`: a keyboard user tabbing to the wordmark would otherwise
    land on it invisibly. */
-h1 a {
+h1 a,
+.wordmark a {
   display: inline-block;
   color: inherit;
   text-decoration: none;
 }
 
-h1 a:focus-visible {
+h1 a:focus-visible,
+.wordmark a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius);
@@ -1456,7 +1464,8 @@ input[type='search']::-webkit-search-cancel-button {
     padding-bottom: 1.25rem;
   }
 
-  h1 {
+  h1,
+  .wordmark {
     font-size: 1.55rem;
   }
 
@@ -2278,4 +2287,115 @@ a.card-link {
 .sp-code-entry input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* --- the server-rendered static body ---
+   /stop/:code arrives with the plate, a first/last table and a nearby-stops
+   block already in the HTML (src/stop-page.ts) — the page a crawler or a
+   no-JS visitor reads, and the page everyone sees at first paint. The plate
+   is the client's own markup, so hydration repaints it identically; the
+   table is replaced by the interactive schedule when /api/stop lands; the
+   nearby block stays. Tokens only, same as everything above. */
+
+/* The plate's title block is the page h1 on this page. The wordmark-sized h1
+   base rule up top would leak the display face and 1.6rem into the name and
+   road lines, so this restates the body's own type; each child span (the
+   stencilled .meta-code included) then sets its own face and size exactly as
+   it did when the title was a div. flex: 1 restores .card-title's share of
+   the head row against the h1 rule's flex: none. */
+h1.card-title {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.45;
+}
+
+/* The static first & last table: Bus | Weekdays | Saturday | Sunday. A real
+   <table> — this is the one block built for reading as a document — wearing
+   the schedule card's own type ramp so the swap to the interactive version
+   lands on near-identical rows. */
+.sp-week {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sp-week th,
+.sp-week td {
+  padding: 0.5rem 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-week th:first-child,
+.sp-week td:first-child {
+  padding-left: 0.8rem;
+  text-align: left;
+}
+
+.sp-week th:last-child,
+.sp-week td:last-child {
+  padding-right: 0.8rem;
+}
+
+/* Same eyebrow treatment as .services-head — 0.7rem is the sunlight floor. */
+.sp-week thead th {
+  padding-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sp-week tbody th,
+.sp-week tbody td {
+  border-top: 1px solid var(--border);
+}
+
+/* Nearby-stop rows: the .rt-results idiom — name leads, road and distance
+   trail right, the whole row one 44px link. */
+.sp-nearby {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sp-nearby li + li {
+  border-top: 1px solid var(--border);
+}
+
+.sp-nearby a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sp-nearby a:active {
+  background: var(--surface-2);
+}
+
+.sp-nearby .nb-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 650;
+  font-size: 0.9rem;
+}
+
+/* The distance is the actionable half, so it never gives way to a long name. */
+.sp-nearby .nb-sub {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }

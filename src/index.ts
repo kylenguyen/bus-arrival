@@ -8,6 +8,17 @@ import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
 import { RouteIndex, type RouteDirection } from './routes.js';
 import { buildSitemap } from './sitemap.js';
+import {
+  STOP_NEARBY_TARGET,
+  STOP_PLATE_TARGET,
+  STOP_SCHED_TARGET,
+  buildStopJsonLd,
+  buildStopNearby,
+  buildStopPlate,
+  buildStopSched,
+  escapeHtml,
+  hasUsableCoord,
+} from './stop-page.js';
 import { StopIndex } from './stops.js';
 import type {
   ArrivalsResponse,
@@ -434,6 +445,8 @@ app.get('/sitemap.xml', (_req, res) => {
  * title — the generic canonical points a junk URL at the homepage, which is the
  * right call, not a placeholder. stop.html's head comment says the same thing
  * from its side — edit a tag there and its constant here in the same commit.
+ * The three body-region targets follow the identical bargain and live with
+ * their builders in stop-page.ts, where a unit test pins them to the shell.
  */
 const STOP_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'stop.html'), 'utf8');
 const STOP_TITLE_TAG = '<title>bus stop arrivals · ezbus</title>';
@@ -457,19 +470,16 @@ const ROUTE_OG_DESC_TAG =
 const ROUTE_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/bus" />';
 const ROUTE_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
 
-/** Escapes text bound for the stop shell's meta tags — attribute values
- *  included, hence the quotes. */
-const escapeHtml = (value: string): string =>
-  value.replace(/[&<>"']/g, (ch) =>
-    ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '"' ? '&quot;' : '&#39;',
-  );
-
 /**
  * The stop page shell. Lenient about `:code` for the same reason `/bus/:service`
  * is — the client renders its own guard, and a 404 here would swap that page for
- * the browser's. When the code is a known stop, the tab title and OG tags are
- * injected per-request so a shared link unfurls as the stop rather than as the
- * app; anything else gets the generic shell untouched.
+ * the browser's. When the code is a known stop, the head tags AND three body
+ * regions are injected per-request: the plate (title block as the page h1, the
+ * exact markup stop.js rebuilds on hydration), the static first/last schedule
+ * (replaced by the client's interactive version), and the nearby-stops block
+ * plus JSON-LD (which the client never touches). Live arrivals stay
+ * client-only — never in this HTML. Anything else gets the generic shell
+ * untouched. The body builders and their swap anchors live in stop-page.ts.
  */
 app.get('/stop/:code', (req, res) => {
   const raw = typeof req.params.code === 'string' ? req.params.code : '';
@@ -478,6 +488,17 @@ app.get('/stop/:code', (req, res) => {
   let html = STOP_SHELL;
   if (stop) {
     const title = escapeHtml(`${stop.code} · ${stop.description}, ${stop.roadName} · ezbus`);
+    // Nearby links carry the stop-to-stop edges of the crawl graph. Self is
+    // dropped from the over-fetched 7, and a 0,0 "unknown coordinate" stop
+    // skips the block entirely rather than listing the neighbours of Null
+    // Island. Two linear scans (opposite + nearby) per page render — the same
+    // sub-millisecond cost /api/stop already pays per load.
+    const nearby = hasUsableCoord(stop)
+      ? stops
+          .nearby(stop.lat, stop.lon, 7)
+          .filter((candidate) => candidate.code !== stop.code)
+          .slice(0, 6)
+      : [];
     html = html
       .replace(STOP_TITLE_TAG, `<title>${title}</title>`)
       .replace(STOP_OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`)
@@ -488,7 +509,10 @@ app.get('/stop/:code', (req, res) => {
       .replace(
         STOP_CANONICAL_TAG,
         `<link rel="canonical" href="https://ezbus.sg/stop/${stop.code}" />`,
-      );
+      )
+      .replace(STOP_PLATE_TARGET, buildStopPlate(stop, stops.oppositeOf(stop.code)))
+      .replace(STOP_SCHED_TARGET, buildStopSched(routes.servicesAt(stop.code)))
+      .replace(STOP_NEARBY_TARGET, buildStopNearby(nearby) + buildStopJsonLd(stop));
   }
 
   res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);

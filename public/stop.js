@@ -195,17 +195,23 @@ function renderPlate() {
       )}</a>`
     : '';
 
+  // The title block is the page's real <h1> — the server renders this same
+  // plate into #sp-plate before this script runs (buildStopPlate in
+  // src/stop-page.ts), so the two must stay in step or hydration flashes.
+  // The stencilled code is aria-hidden and restated in the visually-hidden
+  // span, so the heading reads as one clean string — "Blk 101 (10001),
+  // Demo Ave 1" — while the visible plate keeps the code-leads layout.
   el.plate.innerHTML = `
     <div class="card sp-plate">
       <div class="card-head">
-        <div class="card-title">
-          <span class="meta-code">${escape(s.code)}</span>
-          <span class="card-name">${escape(s.description)}</span>
+        <h1 class="card-title">
+          <span class="meta-code" aria-hidden="true">${escape(s.code)}</span>
+          <span class="card-name">${escape(s.description)}<span class="visually-hidden"> (${escape(s.code)})${s.roadName ? ', ' : ''}</span></span>
           <span class="card-sub">
             ${s.roadName ? `<span class="meta-where">${escape(s.roadName)}</span>` : ''}
             ${distanceChip()}
           </span>
-        </div>
+        </h1>
         <button class="pin" type="button" data-act="pin"
                 aria-pressed="${pinned}"
                 aria-label="${pinned ? 'Unpin' : 'Pin'} ${escape(s.description)}"
@@ -572,13 +578,17 @@ function onAction(event) {
   const act = event.target.closest('[data-act]');
   if (act) {
     switch (act.dataset.act) {
+      // Pin and Share exist in the server-rendered plate before /api/stop has
+      // landed, so a very fast tap must not read `data` that is not there yet
+      // — both are no-ops until the page is ready, exactly as they were when
+      // the plate was a skeleton.
       case 'pin':
-        togglePin();
+        if (mode === 'ready') togglePin();
         return;
       // No `await` may sit between this click and navigator.share — see the
       // note on onShare; this handler is synchronous the whole way down.
       case 'share':
-        onShare(act);
+        if (mode === 'ready') onShare(act);
         return;
       case 'retry':
         mode = 'loading';

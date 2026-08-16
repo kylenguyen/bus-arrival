@@ -62,34 +62,38 @@
       <div class="masthead-row">
         <!-- Same wordmark as the board, but a link: on this page it is the way
              back as well as the name, and the board is one tap away wherever
-             you are on the stop page. -->
-        <h1><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></h1>
+             you are on the stop page. A paragraph, not the heading-1 the other
+             shells use: this page's h1 is the stop name on the plate below,
+             injected by the server and rebuilt by stop.js. -->
+        <p class="wordmark"><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></p>
       </div>
     </header>
 
     <main class="stop-main">
       <p class="back"><a href="/">← Back to board</a></p>
 
+      <!-- Server-swapped body regions. The three single-line blocks below —
+           #sp-plate, #sp-sched and #sp-nearby — are replacement targets exactly
+           like the head tags above: /stop/:code swaps each whole block, by
+           exact string match against the *_TARGET constants in
+           src/stop-page.ts, for the stop's static plate, schedule and
+           neighbours when the code is known. Served unreplaced this is today's
+           generic wait state. Keep each block on one line, and edit a block and
+           its constant in the same commit, or the injection silently stops. -->
+
       <!-- The flag plate: code, name, road, distance, pin, share, opposite.
-           stop.js rewrites this once /api/stop lands; until then it holds the
-           plate's skeleton so the wait has the answer's shape — no spinner,
-           ever, same as everywhere else. -->
-      <div id="sp-plate">
-        <div class="card sp-plate skeleton" aria-hidden="true">
-          <div class="card-head">
-            <div class="card-title">
-              <span class="sk sk-code"></span>
-              <span class="sk sk-name"></span>
-              <span class="sk sk-sub"></span>
-            </div>
-          </div>
-        </div>
-      </div>
+           For a known stop the server renders the real plate (title block as
+           the page h1); stop.js rewrites it — identically — once /api/stop
+           lands. Unknown codes keep the skeleton until the guard renders. -->
+      <div id="sp-plate"><div class="card sp-plate skeleton" aria-hidden="true"><div class="card-head"><div class="card-title"><span class="sk sk-code"></span><span class="sk sk-name"></span><span class="sk sk-sub"></span></div></div></div></div>
 
       <!-- The arrivals board for this one stop — or the guard, when the code in
            the URL is not a stop. Skeleton rows at the arrivals grid's own size,
-           so nothing jumps when the timings land. -->
+           so nothing jumps when the timings land. Never server-swapped: live
+           arrivals are client-rendered only, so a cached page can never show a
+           stale timing. -->
       <section id="sp-arrivals" aria-label="Next buses at this stop">
+        <noscript><p class="card-msg">Live arrival times need JavaScript. The first &amp; last bus table below works without it.</p></noscript>
         <div class="card skeleton" aria-hidden="true">
           <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
           <div class="sk-row"><span class="sk sk-no"></span><span class="sk sk-eta"></span></div>
@@ -97,10 +101,14 @@
         </div>
       </section>
 
-      <!-- "Today at this stop": the flat first/last/frequency table with the
-           Weekday/Sat/Sun control. Empty until /api/stop lands — the arrivals
-           skeleton above already says the page is loading. -->
+      <!-- "Today at this stop". For a known stop the server renders the static
+           first/last table (all three day-types); stop.js replaces it with the
+           interactive day-toggle version once /api/stop lands. -->
       <section id="sp-sched" aria-label="Today at this stop"></section>
+
+      <!-- Nearby stops plus JSON-LD for a known stop; this generic sentence
+           otherwise. stop.js never touches this section. -->
+      <section id="sp-nearby"><p class="card-msg">Looking for live bus arrival times? <a href="/">Open the ezbus board</a> to see every stop near you.</p></section>
     </main>
 
     <footer class="footer">
