@@ -13,10 +13,20 @@
     <title>bus routes in Singapore · ezbus</title>
     <meta property="og:title" content="bus routes in Singapore · ezbus" />
     <meta property="og:description" content="Where this Singapore bus route goes, stop by stop, and live timings as your bus approaches your stop." />
+    <!-- Server-injection target, same bargain as stop.html: `ROUTE_CANONICAL_TAG`
+         in src/index.ts matches this tag verbatim, and the per-service injection
+         (`/bus/:service`) swaps it for the service's own canonical. Served raw,
+         the generic tag is correct — a junk URL declares the homepage its
+         canonical and stays out of the index. Edit this tag and its constant in
+         the same commit, or the injection silently stops. -->
+    <link rel="canonical" href="https://ezbus.sg/" />
     <meta property="og:site_name" content="ezbus" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="en_SG" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://ezbus.sg/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <!-- Fetched in parallel with route.js, which imports them, rather than after.
          route-logic.js itself imports origin.js, so both are named here. -->
     <link rel="modulepreload" href="/origin.js" />

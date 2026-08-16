@@ -413,17 +413,30 @@ app.get('/sitemap.xml', (_req, res) => {
  * change under a running process, and a missing file should fail the boot, not
  * the ten-thousandth request.
  *
- * The three tag constants are the shell's own generic meta, verbatim: injection
+ * The four tag constants are the shell's own generic meta, verbatim: injection
  * works by exact-string replacement of a whole tag, so the file served
  * unreplaced (unknown code, or `express.static` fetching `/stop.html` directly)
  * is already valid generic HTML with no `__TOKEN__` text to leak into a tab
- * title. stop.html's head comment says the same thing from its side — edit a
- * tag there and its constant here in the same commit.
+ * title — the generic canonical points a junk URL at the homepage, which is the
+ * right call, not a placeholder. stop.html's head comment says the same thing
+ * from its side — edit a tag there and its constant here in the same commit.
  */
 const STOP_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'stop.html'), 'utf8');
 const STOP_TITLE_TAG = '<title>bus stop arrivals · ezbus</title>';
 const STOP_OG_TITLE_TAG = '<meta property="og:title" content="bus stop arrivals · ezbus" />';
 const STOP_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/stop" />';
+const STOP_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
+
+/**
+ * route.html's canonical tag, verbatim — the same bargain as the stop constants
+ * above, defined in the same commit as the shell edit so the pair cannot drift.
+ * Nothing replaces it yet: the per-service injection on `/bus/:service` (T4 of
+ * docs/seo-implementation-plan.md) swaps it for `https://ezbus.sg/bus/<serviceNo>`.
+ * Until then every route URL declares the homepage canonical, which keeps
+ * junk-parameter URLs out of the index rather than in it under the wrong name.
+ */
+const ROUTE_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
+void ROUTE_CANONICAL_TAG; // referenced from T4's injection; kept live until then
 
 /** Escapes text bound for the stop shell's meta tags — attribute values
  *  included, hence the quotes. */
@@ -452,6 +465,10 @@ app.get('/stop/:code', (req, res) => {
       .replace(
         STOP_OG_URL_TAG,
         `<meta property="og:url" content="https://ezbus.sg/stop/${stop.code}" />`,
+      )
+      .replace(
+        STOP_CANONICAL_TAG,
+        `<link rel="canonical" href="https://ezbus.sg/stop/${stop.code}" />`,
       );
   }
 
