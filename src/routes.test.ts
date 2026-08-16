@@ -16,7 +16,7 @@ import { describe, it } from 'node:test';
 process.env.LTA_ACCOUNT_KEY = 'test-key';
 process.env.LTA_BASE_URL = 'http://datamall.test/ltaodataservice';
 
-const { RouteIndex, buildRoutes } = await import('./routes.js');
+const { RouteIndex, buildRoutes, compareServiceNos } = await import('./routes.js');
 const { mockRoutes, mockServiceInfo } = await import('./mock.js');
 
 /**
@@ -218,6 +218,24 @@ describe('RouteIndex.get', () => {
 
   it('returns null for an unknown service', () => {
     assert.equal(index.get('NOPE'), null);
+  });
+});
+
+describe('compareServiceNos', () => {
+  it('orders by numeric prefix, then lexically, letter-only services last', () => {
+    const sorted = ['12', '2', '10e', '10', 'NR7'].sort(compareServiceNos);
+    assert.deepEqual(sorted, ['2', '10', '10e', '12', 'NR7']);
+  });
+});
+
+describe('RouteIndex.all', () => {
+  it('enumerates every service, in compareServiceNos order', () => {
+    const services = index.all();
+    assert.equal(services.length, index.size);
+    assert.deepEqual(
+      services.map((s) => s.serviceNo),
+      ['61', '107', '359', '825', '972M'],
+    );
   });
 });
 

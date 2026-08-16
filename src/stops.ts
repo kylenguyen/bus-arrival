@@ -99,6 +99,17 @@ export class StopIndex {
     return this.#byCode.get(code.trim()) ?? null;
   }
 
+  /**
+   * Every stop, in feed order, for callers that enumerate the whole list —
+   * the sitemap and the services index. Handing out the internal array
+   * read-only is safe because `reload()` replaces the reference wholesale and
+   * never mutates it in place, so a caller's snapshot stays consistent across
+   * a refresh.
+   */
+  all(): readonly BusStop[] {
+    return this.#stops;
+  }
+
   /** Straight-line metres from a point to a stop. */
   distanceFrom(stop: BusStop, lat: number, lon: number): number {
     return Math.round(haversineM(lat, lon, stop.lat, stop.lon));

@@ -122,6 +122,16 @@ describe('StopIndex.nearby', () => {
   });
 });
 
+describe('StopIndex.all', () => {
+  it('enumerates every stop the index holds, 0,0 rows included', () => {
+    // `all()` is enumeration, not ranking: the sitemap needs the 0,0 stop's
+    // page listed even though `nearby()` will never surface it.
+    const stops = index.all();
+    assert.equal(stops.length, index.size);
+    assert.ok(stops.some((stop) => stop.code === ZERO_COORD_CODE));
+  });
+});
+
 describe('StopIndex.distanceFrom', () => {
   it('is zero for a stop at the query coordinate', () => {
     const stop = index.get('01012');

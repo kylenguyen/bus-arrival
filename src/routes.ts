@@ -168,6 +168,26 @@ export const buildRoutes = (routeStops: RouteStop[], services: ServiceInfo[]): B
   return { services: index, stopServices };
 };
 
+/** Leading digits as a number; Infinity when there are none, sorting last. */
+const numericPrefix = (serviceNo: string): number => {
+  const digits = /^\d+/.exec(serviceNo);
+  return digits ? Number(digits[0]) : Infinity;
+};
+
+/**
+ * Bus-directory order for service numbers: numerically by the numeric prefix,
+ * then lexically — `2` before `10` before `10e` before `12`, and services with
+ * no numeric prefix (`NR7`) after every numbered one. Pure and exported so the
+ * tests can feed it hand-written lists — the ordering `/buses` renders is
+ * decided here and nowhere else.
+ */
+export const compareServiceNos = (a: string, b: string): number => {
+  const numA = numericPrefix(a);
+  const numB = numericPrefix(b);
+  if (numA !== numB) return numA - numB;
+  return a < b ? -1 : a > b ? 1 : 0;
+};
+
 /**
  * Every service's route, in memory, refreshed daily — a structural copy of
  * `StopIndex` (see [stops.ts](./stops.ts)). A few hundred services over ~26k
@@ -228,6 +248,18 @@ export class RouteIndex {
   /** Case-insensitive: the URL path may carry `972m` for DataMall's `972M`. */
   get(serviceNo: string): RouteService | null {
     return this.#services.get(serviceNo.trim().toUpperCase()) ?? null;
+  }
+
+  /**
+   * Every service, in `compareServiceNos` order — the enumeration behind the
+   * sitemap and the `/buses` index. A fresh sorted array per call: a few
+   * hundred services, so the sort is trivia, and nothing to keep in step with
+   * `reload()`.
+   */
+  all(): RouteService[] {
+    return [...this.#services.values()].sort((a, b) =>
+      compareServiceNos(a.serviceNo, b.serviceNo),
+    );
   }
 
   /**
