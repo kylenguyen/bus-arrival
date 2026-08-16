@@ -2357,18 +2357,23 @@ h1.card-title {
 }
 
 /* Nearby-stop rows: the .rt-results idiom — name leads, road and distance
-   trail right, the whole row one 44px link. */
-.sp-nearby {
+   trail right, the whole row one 44px link. `.rt-stops` is the route page's
+   server-rendered stop list (an <ol> — the order is the route — so the
+   list-style reset matters there) wearing the same rows. */
+.sp-nearby,
+.rt-stops {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.sp-nearby li + li {
+.sp-nearby li + li,
+.rt-stops li + li {
   border-top: 1px solid var(--border);
 }
 
-.sp-nearby a {
+.sp-nearby a,
+.rt-stops a {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
@@ -2378,11 +2383,13 @@ h1.card-title {
   text-decoration: none;
 }
 
-.sp-nearby a:active {
+.sp-nearby a:active,
+.rt-stops a:active {
   background: var(--surface-2);
 }
 
-.sp-nearby .nb-name {
+.sp-nearby .nb-name,
+.rt-stops .nb-name {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -2392,10 +2399,38 @@ h1.card-title {
 }
 
 /* The distance is the actionable half, so it never gives way to a long name. */
-.sp-nearby .nb-sub {
+.sp-nearby .nb-sub,
+.rt-stops .nb-sub {
   margin-left: auto;
   color: var(--muted);
   font-size: 0.75rem;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- route page: the server-rendered static body ---
+   #rt-static is the crawlable route (src/route-page.ts): one card per
+   direction, removed by route.js the moment the live spine renders. The
+   heading rides the card-head plate; body face, not the display face — a
+   destination is prose, not a number matched against the world. */
+#rt-static {
+  margin-top: 1rem;
+}
+
+.rt-dir {
+  margin: 0 0 0.75rem;
+}
+
+.rt-dir-head {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.rt-dir-meta {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }

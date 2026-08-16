@@ -87,6 +87,7 @@
            Starts as a skeleton spine so a slow /api/route reads as a route
            arriving rather than an empty page. -->
       <section id="rt-body" aria-label="Route stops">
+        <noscript><p class="card-msg">Live bus timings need JavaScript. The full route below works without it.</p></noscript>
         <ul class="spine sk-spine skeleton" aria-hidden="true">
           <li><span class="sk"></span></li>
           <li><span class="sk"></span></li>
@@ -98,6 +99,18 @@
           <li><span class="sk"></span></li>
         </ul>
       </section>
+
+      <!-- The full route, server-rendered for a known service: every stop
+           linked, per direction, plus first/last bus, operator and JSON-LD —
+           and this generic sentence otherwise. A server-swapped body region
+           exactly like the head tags above: /bus/:service replaces the whole
+           block, by exact string match against ROUTE_STATIC_TARGET in
+           src/route-page.ts. route.js removes the section once the live view
+           renders (the interactive spine shows the same stops, and both at
+           once would be the route twice); with JS off this section is the
+           page. Keep the block on one line, and edit it and its constant in
+           the same commit, or the injection silently stops. -->
+      <section id="rt-static"><p class="card-msg">Looking for a Singapore bus route? <a href="/">Open the ezbus board</a> to see every bus arriving near you, live.</p></section>
     </main>
 
     <footer class="footer">

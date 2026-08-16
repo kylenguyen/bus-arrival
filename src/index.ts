@@ -6,7 +6,8 @@ import { arrivalsForMany } from './arrivals.js';
 import { config, mockMode } from './config.js';
 import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
-import { RouteIndex, type RouteDirection } from './routes.js';
+import { ROUTE_STATIC_TARGET, buildRouteJsonLd, buildRouteStatic } from './route-page.js';
+import { RouteIndex, type RouteDirection, type RouteService } from './routes.js';
 import { buildSitemap } from './sitemap.js';
 import {
   STOP_NEARBY_TARGET,
@@ -314,6 +315,39 @@ const directionEndpoints = (
 };
 
 /**
+ * One direction rendered to the wire/page shape: endpoints joined, every stop
+ * joined, re-numbered 1..n — `RouteDirection` holds codes in StopSequence order
+ * but DataMall's raw sequence numbers can skip, and both consumers want a dense
+ * index, not the feed's bookkeeping. Null when the direction is missing or
+ * empty. Shared by `/api/route/:service` and the static body on `/bus/:service`.
+ */
+const directionPayload = (
+  direction: 1 | 2,
+  found: RouteDirection | undefined,
+): RouteDirectionPayload | null => {
+  const endpoints = directionEndpoints(found);
+  if (!found || !endpoints) return null;
+  return {
+    direction,
+    origin: endpoints.origin,
+    destination: endpoints.destination,
+    firstBus: found.firstBus,
+    lastBus: found.lastBus,
+    stops: found.stops.map((code, i) => ({ seq: i + 1, ...joinRouteStop(code) })),
+  };
+};
+
+/** Both directions of a service, in 1-then-2 order, skipping absent ones. */
+const servicePayloads = (service: RouteService): RouteDirectionPayload[] => {
+  const directions: RouteDirectionPayload[] = [];
+  for (const direction of [1, 2] as const) {
+    const payload = directionPayload(direction, service.directions.get(direction));
+    if (payload) directions.push(payload);
+  }
+  return directions;
+};
+
+/**
  * One service's full route, both directions, stops joined with names and
  * coordinates. Carries nothing about the caller — a service number is public
  * knowledge — so unlike `/api/places` a shared cache is welcome here, and
@@ -332,23 +366,7 @@ app.get('/api/route/:service', (req, res) => {
     return;
   }
 
-  const directions: RouteDirectionPayload[] = [];
-  for (const direction of [1, 2] as const) {
-    const found = service.directions.get(direction);
-    const endpoints = directionEndpoints(found);
-    if (!found || !endpoints) continue;
-    directions.push({
-      direction,
-      origin: endpoints.origin,
-      destination: endpoints.destination,
-      firstBus: found.firstBus,
-      lastBus: found.lastBus,
-      // Re-numbered 1..n: `RouteDirection` holds codes in StopSequence order
-      // but DataMall's raw sequence numbers can skip, and the page wants a
-      // dense index, not the feed's bookkeeping.
-      stops: found.stops.map((code, i) => ({ seq: i + 1, ...joinRouteStop(code) })),
-    });
-  }
+  const directions = servicePayloads(service);
 
   const body: RouteResponse = {
     serviceNo: service.serviceNo,
@@ -521,9 +539,13 @@ app.get('/stop/:code', (req, res) => {
 /**
  * The route page shell. Deliberately lenient about `:service` — the client
  * renders its own "no such service" state, and a 404 here would swap that page
- * for the browser's. When the service is known, the title, OG tags and
- * canonical are injected per-request, endpoint names joined through
- * `directionEndpoints`; anything else gets the generic shell untouched.
+ * for the browser's. When the service is known, the head tags AND the static
+ * body region are injected per-request: title, OG tags and canonical, then the
+ * full route — every stop of every direction linked to its stop page — plus
+ * JSON-LD, in the #rt-static section route.js removes once the live view
+ * renders. Live arrivals stay client-only — never in this HTML. Anything else
+ * gets the generic shell untouched. The body builders and their swap anchor
+ * live in route-page.ts.
  *
  * The canonical (and og:url) carries `service.serviceNo` — DataMall's own
  * spelling, not the URL's — so `/bus/972m` declares `/bus/972M` its canonical
@@ -532,22 +554,22 @@ app.get('/stop/:code', (req, res) => {
 app.get('/bus/:service', (req, res) => {
   const raw = typeof req.params.service === 'string' ? req.params.service : '';
   const service = SERVICE_NO.test(raw) ? routes.get(raw) : null;
-  // Direction 1 names the page; a service the feed only knows backwards
-  // (directions can drift for a day) still gets metadata from direction 2.
-  const endpoints = service
-    ? (directionEndpoints(service.directions.get(1)) ?? directionEndpoints(service.directions.get(2)))
-    : null;
+  const directions = service ? servicePayloads(service) : [];
+  // Direction 1 names the page (and feeds the JSON-LD ItemList); a service the
+  // feed only knows backwards (directions can drift for a day) still gets both
+  // from direction 2, which is then first in the array.
+  const lead = directions[0];
 
   let html = ROUTE_SHELL;
-  if (service && endpoints) {
+  if (service && lead) {
     const title = escapeHtml(
       service.loop
-        ? `bus ${service.serviceNo} · loop at ${service.loopDesc || endpoints.origin.description} · ezbus`
-        : `bus ${service.serviceNo} · ${endpoints.origin.description} → ${endpoints.destination.description} · ezbus`,
+        ? `bus ${service.serviceNo} · loop at ${service.loopDesc || lead.origin.description} · ezbus`
+        : `bus ${service.serviceNo} · ${lead.origin.description} → ${lead.destination.description} · ezbus`,
     );
     const description = escapeHtml(
-      `Bus ${service.serviceNo} route: all stops from ${endpoints.origin.description} to ` +
-        `${endpoints.destination.description}, with live arrival times. Operated by ${service.operator}.`,
+      `Bus ${service.serviceNo} route: all stops from ${lead.origin.description} to ` +
+        `${lead.destination.description}, with live arrival times. Operated by ${service.operator}.`,
     );
     const url = `https://ezbus.sg/bus/${escapeHtml(service.serviceNo)}`;
     html = html
@@ -555,7 +577,11 @@ app.get('/bus/:service', (req, res) => {
       .replace(ROUTE_OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`)
       .replace(ROUTE_OG_DESC_TAG, `<meta property="og:description" content="${description}" />`)
       .replace(ROUTE_OG_URL_TAG, `<meta property="og:url" content="${url}" />`)
-      .replace(ROUTE_CANONICAL_TAG, `<link rel="canonical" href="${url}" />`);
+      .replace(ROUTE_CANONICAL_TAG, `<link rel="canonical" href="${url}" />`)
+      .replace(
+        ROUTE_STATIC_TARGET,
+        buildRouteStatic(service, directions) + buildRouteJsonLd(service.serviceNo, lead.stops),
+      );
   }
 
   res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);

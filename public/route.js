@@ -190,6 +190,19 @@ function userDistanceM(stop) {
 
 // --- boot -------------------------------------------------------------------
 
+/**
+ * The server-rendered static route (#rt-static in route.html, injected by
+ * /bus/:service) — every stop of every direction, for crawlers and for JS-off
+ * readers. Once this page renders its own view of the route, keeping the
+ * static copy too would show the same stops twice, so it is removed — not
+ * hidden — the moment the live view takes over. Deliberately NOT removed on
+ * fetch failure: renderFailed's guard sits above it, and a route list already
+ * in hand is exactly what a reader on a dead connection still wants.
+ */
+function dropStatic() {
+  document.getElementById('rt-static')?.remove();
+}
+
 async function loadRoute() {
   try {
     const res = await fetch(`/api/route/${encodeURIComponent(serviceNo)}`);
@@ -215,6 +228,7 @@ async function loadRoute() {
  * raw storage strings, hands them over, and assigns the outcome.
  */
 function applyLadder() {
+  dropStatic();
   const resolved = resolveAnchor({
     serviceNo,
     queryStop: new URLSearchParams(location.search).get('stop'),
@@ -718,6 +732,9 @@ function highlight(value, range) {
 /** The "no such service" page — a real page, never a dead JSON error. */
 function renderMissing(svc) {
   mode = 'missing';
+  // A service the shell was injected for but the API disowned (feed drift):
+  // "There's no bus service X" above X's full route would contradict itself.
+  dropStatic();
   document.title = 'no such service · ezbus';
   el.head.innerHTML = '';
   el.notices.innerHTML = '';
