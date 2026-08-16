@@ -12,10 +12,23 @@ reasoning at the time was sound and is quoted in the file: an accent, underlined
 the first column would out-shout the minutes beside it. The result is that nothing on the
 card says it goes anywhere.
 
-A + D fixes that with ink rather than height. Options B (tiles) and C (named door strips)
-were rejected — C because it buys discoverability with the screen space the board exists to
-spend on arrivals; B is the documented fallback if A proves too quiet in use, and can
-replace A without touching anything else.
+**Scope of this round (16 Aug 2026):** a chevron on the stop-name link, and a first-visit
+tip that names both doors. The service-number underline that option A also carried was
+tried and **rejected** — a hairline under `61`, sitting a few pixels above the vehicle
+mark, drew the eye away from the minutes that are the reason the row exists. So the
+stop-name door gets a permanent mark and the bus-number door does not.
+
+The cost of that, stated plainly: after the tip retires, **nothing on the board indicates
+that the bus number is tappable.** The tip is the only teacher for that door, and it shows
+at most three times. That is an accepted trade — the bus-number door is the secondary one,
+and the stop page it leads through carries its own service links — but if usage says the
+route page is undiscoverable, the fix is a new round on that one affordance, not a quiet
+reinstatement of the underline here.
+
+Options B (tiles) and C (named door strips) were rejected — C because it buys
+discoverability with the screen space the board exists to spend on arrivals; B is the
+documented fallback if the chevron proves too quiet in use, and can replace it without
+touching anything else.
 
 Rules of the road for every task: **AGENTS.md wins on behaviour, style-guide.md wins on
 looks.** Read both before touching anything. `public/origin.js` stays pure — no DOM,
@@ -24,11 +37,14 @@ storage, clock or `fetch` — and the module-contract test in
 Every interpolation goes through the local `escape()`. User-facing copy is pinned verbatim
 by tests.
 
-Execution: tasks run **sequentially** in a shared working tree, one commit each. T3 is the
-only genuinely parallel-safe task (it touches `public/origin.js` and
-`src/origin.test.ts` and nothing else); T1, T2 and T4 all edit `public/styles.css`, and
-T2/T4 both edit `public/index.html` and `public/app.js`. If T3 is run concurrently in a
-worktree, rebase it onto `main` before T4 starts.
+Execution: tasks run **sequentially** in a shared working tree, one commit each. T2 is the
+only genuinely parallel-safe task (it touches `public/origin.js` and `src/origin.test.ts`
+and nothing else); T1 and T3 both edit `public/index.html`, `public/app.js` and
+`public/styles.css`. If T2 is run concurrently in a worktree, rebase it onto `main` before
+T3 starts.
+
+**Do not touch `a.service-no` in `public/styles.css`.** Its existing comment argues for the
+absent underline; that argument still stands and the rule stays as it is.
 
 ---
 
@@ -41,102 +57,35 @@ worktree, rebase it onto `main` before T4 starts.
 | Dismiss label | `Got it` |
 | Showings before auto-retire | `3` |
 | New classes | `.card-chev`, `.coach`, `.coach-x` |
-| Underline scope | `a.service-no`, product-wide |
 | Chevron scope | `a.card-link` on the board card, and the intro dialog's sample |
 
 ### Decisions taken (16 Aug 2026)
 
-1. **The underline is product-wide, not board-only.** `public/stop.js` and
-   `src/stop-page.ts` already emit `a.service-no`, so scoping the rule to the board would
-   make one component teach two different things on two pages. The accepted cost is a
-   visible change to the stop page, which was designed in a separate round. The route page
-   and `/buses` are unaffected — both render `<span class="service-no">`, not a link, and
-   must stay bare.
-2. **The tip shows at most three times, and a dismissal ends it immediately.** Pressing
+1. **No service-number underline, on any surface.** Tried and rejected as too distracting
+   next to the minutes. `a.service-no` keeps `text-decoration: none` product-wide — board,
+   stop page live rows, and the stop page's first/last-bus table. `/bus/:n` and `/buses`
+   render `<span class="service-no">` and were never in scope.
+2. **The tip copy still names both doors.** It reads "Tap a bus number for where it goes."
+   even though that door now has no permanent mark — that is precisely why the sentence
+   stays. Teaching it once is the whole remaining mechanism.
+3. **The tip shows at most three times, and a dismissal ends it immediately.** Pressing
    "Got it" writes the retired record straight away, whether it is the first showing or the
    third. Auto-retire is the backstop for a rider who never presses anything; the dismissal
    is not a "seen once" counter increment.
-3. **The dismiss control is 2.75rem, not the 1.6rem `×` in the specimen.** The mock
+4. **The dismiss control is 2.75rem, not the 1.6rem `×` in the specimen.** The mock
    under-drew it; style-guide.md floors anything tappable at 44px. The shipped control is a
    `Got it` button using `.pin`'s negative-margin trick so the row still lands near 44px
    overall.
 
 ---
 
-## T1 — Underline the linked service number
+## T1 — Chevron after the stop name
 
-**Scope:** `public/styles.css` only. No markup changes — every surface already emits
-`a.service-no`.
+**Scope:** `public/app.js`, `public/index.html`, `public/styles.css`. No dependencies.
 
-Replace the `a.service-no` rule (in the route-page section, immediately under the
-`--- route page (/bus/:service) ---` banner). Its comment currently argues *for* the absent
-underline; rewrite it to record the new decision — a muted hairline, not an accent
-underline, because the accent still belongs to the minutes — rather than deleting it.
-
-```css
-a.service-no {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--muted);
-  text-decoration-thickness: 1px;
-  text-underline-offset: <measured>;
-}
-```
-
-### The geometry problem this task exists to solve
-
-`.service-no` is `display: block`, `1.3rem`, `line-height: 1.1`; `.service-tags` sits
-`margin-top: 0.2rem` below it carrying a `0.7rem` vehicle mark. The underline is drawn
-below the baseline and may land inside that 3.2px gap, where it reads as part of the
-drawing rather than as a link. Do not guess at the offset:
-
-1. Measure in a real browser at 375px **with Archivo Narrow actually loaded**, not the
-   fallback: clear air between the underline's bottom edge and the top of `.tag-svg`.
-2. Target **≥3px clear** at a 1rem root, so the underline can never be taken for the
-   mark's own ink.
-3. Pick `text-underline-offset` in the `0.12em`–`0.2em` band. Only if that cannot buy the
-   clearance, raise `.service-tags` `margin-top` to `0.3rem`.
-4. **Prove the row height did not move.** Measure `.service`
-   `getBoundingClientRect().height` before and after, on a row *with* a lead ETA and
-   crowding pill **and** on a row *without* one (`.eta-empty`, or a service whose lead cell
-   has no crowding label — `renderEta` emits an empty `.eta-load` there). The lead ETA
-   column normally drives row height and leaves slack, but that is the assumption under
-   test, not a given. If any row grows, the `.service-tags` margin cannot go up and the
-   clearance must come from the offset alone.
-5. **No bare `color-mix()`.** The file still carries iOS 15 fallbacks. If `var(--muted)` at
-   1px reads too heavy, soften it inside
-   `@supports (background: color-mix(in srgb, red 16%, white))` with plain `var(--muted)`
-   as the fallback — the same pattern the crowding pills use.
-
-### Verification
-
-1. `npm run build && npm test` — green. No existing test should need changing.
-2. `npm start`; browser at 375px in the device toolbar. Capture five surfaces in **both**
-   colour schemes:
-   - `/` board cards;
-   - the intro dialog's sample card (clear all `bus-board.*` keys first — it renders
-     `<a class="service-no">` with no href precisely so it cannot drift from the board);
-   - `/stop/10001` live arrival rows;
-   - `/stop/10001` first/last-bus table (the `<th>` links);
-   - an ended service on the stop page, for the `.sp-off .service-no` muted state.
-3. Negative check: `/bus/52` and `/buses` render `<span class="service-no">` — confirm
-   neither gains an underline.
-4. Zoom one service row to 400%: the underline does not touch the vehicle mark in either
-   scheme.
-5. Record the before/after row heights from step 4 of the geometry work in the task report.
-6. 320px on `/` and `/stop/10001`:
-   `document.documentElement.scrollWidth === window.innerWidth`.
-
-**Commit:** `T1: underline the linked service number`
-
----
-
-## T2 — Chevron after the stop name
-
-**Scope:** `public/app.js`, `public/index.html`, `public/styles.css`.
-
-In `renderShells`, append the mark **inside** `.card-name`, not as a sibling —
-`.card-name` is `display: block`, so a sibling would land on its own line:
+In `renderShells` ([public/app.js](../public/app.js) around line 718), append the mark
+**inside** `.card-name`, not as a sibling — `.card-name` is `display: block`, so a sibling
+would land on its own line:
 
 ```js
 <span class="card-name">${escape(stop.description)}<span class="card-chev" aria-hidden="true">›</span></span>
@@ -148,13 +97,16 @@ screen readers, and this mark carries nothing the link text does not.
 **Do not put the chevron at the head's right edge.** `.pin` already owns that edge; two
 controls there would be worse than none.
 
-The intro dialog's sample card must not drift — its own comment says it is built from the
-board's classes so it cannot promise a layout the board does not produce. Wrap its
-code+name in `<a class="card-link">` with no href (the same precedent as the
-`<a class="service-no">` with no href a few lines below) and add the chevron span. Extend
-the comment to say why.
+The intro dialog's sample card ([public/index.html](../public/index.html) around line 260)
+must not drift — its own comment says it is built from the board's classes so it cannot
+promise a layout the board does not produce. Add the same chevron span inside its
+`.card-name` and extend the comment to say why. It needs **no** `<a class="card-link">`
+wrapper: `a.card-link` contributes no visible styling (`color: inherit`,
+`text-decoration: none`), so the plain `<span class="card-name">` already renders
+identically, and adding a link element to a decorative sample buys nothing.
 
-CSS, beside the existing `a.card-link` rule, updating that comment:
+CSS, beside the existing `a.card-link` rule, updating that comment to record that the card
+link now carries a mark:
 
 ```css
 .card-chev {
@@ -170,21 +122,26 @@ check it against the longest description in mock data at 320px and report what i
 
 ### Verification
 
-1. `npm run build && npm test` — green.
-2. Board at 375px, both schemes: the chevron trails the name in `--muted`, and none of
-   `.meta-code`, `.card-name` or `.card-sub` shifts position.
-3. `.card-head` `getBoundingClientRect().height` unchanged before/after.
-4. First visit (clear all `bus-board.*` keys): the sample card shows the same chevron as
-   the live board, and Tab from the intro's doors must not land in the sample's link.
+1. `npm run build && npm test` — green. No existing test should need changing.
+2. `npm start`; browser at 375px in the device toolbar. Board in **both** colour schemes:
+   the chevron trails the name in `--muted`, and none of `.meta-code`, `.card-name` or
+   `.card-sub` shifts position.
+3. `.card-head` `getBoundingClientRect().height` measured before and after — unchanged.
+   Record both numbers in the task report.
+4. First visit (clear all `bus-board.*` keys): the intro dialog's sample card shows the
+   same chevron as the live board, at the same offset and colour.
 5. Screen reader on the live board: the card link announces `43179 Opp Blk 123, link` —
    no "single right-pointing angle quotation mark".
-6. Longest mock description at 320px: no sideways scroll; orphan behaviour reported.
+6. Longest mock description at 320px: `document.documentElement.scrollWidth ===
+   window.innerWidth`, and report what the orphan does.
+7. Negative check: `/stop/10001`, `/bus/52` and `/buses` gain no chevron anywhere.
+8. Confirm `git diff` touches no `a.service-no` rule.
 
-**Commit:** `T2: chevron on the board card's stop link`
+**Commit:** `T1: chevron on the board card's stop link`
 
 ---
 
-## T3 — Pure hint logic + tests
+## T2 — Pure hint logic + tests
 
 **Scope:** `public/origin.js`, `src/origin.test.ts`. No UI. The only parallel-safe task.
 
@@ -213,7 +170,7 @@ Rules:
 - `readHintRecord` degrades to `{ shown: 0 }` for anything that is not a non-negative
   integer.
 - `dismissedHintRecord()` is what a dismissal persists: it jumps straight to the retired
-  state, so "Got it" on the first showing ends the tip for good (decision 2 above).
+  state, so "Got it" on the first showing ends the tip for good (decision 3 above).
 
 Nothing here needs a clock, so no `now` parameter — and the module-contract test will fail
 if `Date.now`, `document`, `localStorage` or `fetch(` appear in the file.
@@ -230,14 +187,15 @@ if `Date.now`, `document`, `localStorage` or `fetch(` appear in the file.
    retires it, from any starting count.
 4. All three copy/threshold constants pinned verbatim, matching the way
    `ADDRESS_DOOR_LABEL` is already asserted.
+5. The existing module-contract purity test still passes unmodified.
 
-**Commit:** `T3: pure hint decision logic`
+**Commit:** `T2: pure hint decision logic`
 
 ---
 
-## T4 — The coach mark
+## T3 — The coach mark
 
-**Depends on T3**, and lands after T2 (both edit `index.html` and `app.js`).
+**Depends on T2**, and lands after T1 (both edit `index.html`, `app.js` and `styles.css`).
 
 **Scope:** `public/index.html`, `public/app.js`, `public/styles.css`, plus one line of
 `AGENTS.md`.
@@ -253,13 +211,14 @@ a screen reader meets the tip before the cards, and nothing reflows when it appe
 ```
 
 Text and button label are filled from `HINT_COPY` / `HINT_DISMISS_LABEL` by app.js, so the
-copy has one source and T3's test is the only place it is pinned. **Not** a live region —
+copy has one source and T2's test is the only place it is pinned. **Not** a live region —
 it is not news, and `#board` beside it is already `aria-live="polite"`.
 
 app.js:
 
-- `HINT_KEY = 'bus-board.hint.v1'`, added to the storage-key comment block at the top of
-  the file. That block opens "Four localStorage keys" and must now say five.
+- `HINT_KEY = 'bus-board.hint.v1'`, added to the storage-key comment block at
+  [public/app.js:12](../public/app.js#L12). That block opens "Four localStorage keys" and
+  must now say five.
 - Decide **once per page load**, not per refresh: a module-level `hintDecided` flag,
   checked in `loadBoard`'s success branch right after `render()`, passing
   `boardHasCards: board.length > 0`. An origin switch calls `loadBoard` again and must not
@@ -277,6 +236,9 @@ and the border is its only edge):
 - `.coach-x` at `min-height: 2.75rem`, with `.pin`-style negative margins so the row still
   lands near 44px overall.
 - Nothing below `0.78rem`. No animation on appearance.
+- **No bare `color-mix()`** — the file still carries iOS 15 fallbacks. If a softer tint is
+  wanted, wrap it in `@supports (background: color-mix(in srgb, red 16%, white))` with a
+  plain custom-property fallback, the same pattern the crowding pills use.
 
 ### Verification
 
@@ -287,62 +249,68 @@ and the border is its only edge):
    `localStorage['bus-board.hint.v1']` reads `{"shown":3}`.
 4. Clear again → press "Got it" on the **first** showing → gone immediately; reload →
    still gone; the key reads `{"shown":3}`.
-5. Deny geolocation so the gate shows → no tip. Choose an address with no stops nearby
+5. Switch origin (GPS → address) with the tip on screen: `loadBoard` runs again, the
+   counter does **not** advance a second time in the same page load.
+6. Deny geolocation so the gate shows → no tip. Choose an address with no stops nearby
    (empty board) → no tip.
-6. Dismiss button ≥44px in the DevTools box model; a comfortable one-handed hit at 375px.
-7. First screenful still leads with arrivals — report the card count visible with and
+7. Dismiss button ≥44px in the DevTools box model; a comfortable one-handed hit at 375px.
+8. First screenful still leads with arrivals — report the card count visible with and
    without the tip at 375px.
-8. 320px: no sideways scroll; the copy wraps without pushing the button off the row.
-9. Both colour schemes; the accent bar is visible in dark.
-10. Tab order: masthead → origin chip → tip button → first card link. Screen reader reads
+9. 320px: no sideways scroll; the copy wraps without pushing the button off the row.
+10. Both colour schemes; the accent bar is visible in dark.
+11. Tab order: masthead → origin chip → tip button → first card link. Screen reader reads
     the tip once, not as an alert.
-11. Storage blocked (Firefox `dom.storage.enabled = false`): the board still renders and
+12. Storage blocked (Firefox `dom.storage.enabled = false`): the board still renders and
     the tip does not break the load.
-12. `AGENTS.md` "Verifying a change" §4 says "clear all four keys" — update it to five and
-    name the new key. That is a load-bearing contributor instruction, not documentation.
+13. `AGENTS.md` "Verifying a change" §4 ([AGENTS.md:280](../AGENTS.md#L280)) says "clear all
+    four keys" — update it to five and name the new key. That is a load-bearing contributor
+    instruction, not documentation.
 
-**Commit:** `T4: first-visit navigation tip`
+**Commit:** `T3: first-visit navigation tip`
 
 ---
 
-## T5 — End-to-end verification
+## T4 — End-to-end verification
 
-Full sweep after T1–T4, by a fresh agent that assumes nothing. No commit unless a fix is
-needed; a fix commits as `T5: <fix>`.
+Full sweep after T1–T3, by a fresh agent that assumes nothing. No commit unless a fix is
+needed; a fix commits as `T4: <fix>`.
 
 1. **Clean build + tests:** `npm run build && npm test` — all green, zero skips.
 2. **Server health:** `npm start`, then `curl -s localhost:8080/healthz` →
    `{"ok":true,…,"mock":true}` with `upstreamCalls: 0` (mock mode never enters
    `request()`).
 3. **The journey**, at 375px, both schemes, storage cleared: `/` intro → door → board
-   (tip + chevrons + underlines) → tap a stop name → `/stop/:code` → tap a service number
-   → `/bus/:no?stop=…` anchored to the right stop → back. Every hop lands where it should.
-4. **Surface matrix.** Underline present on: `/`, `/stop/:code` live rows, `/stop/:code`
-   schedule table, intro sample. Absent on: `/bus/:no`, `/buses`. Chevron present on:
-   board cards, intro sample. Absent everywhere else.
-5. **Tip lifecycle:** three showings then retired; "Got it" retires in one, from any count.
-6. **320px** on `/`, `/stop/10001`, `/bus/52`, `/buses`:
+   (tip + chevrons) → tap a stop name → `/stop/:code` → tap a service number →
+   `/bus/:no?stop=…` anchored to the right stop → back. Every hop lands where it should —
+   including the unmarked bus-number link, which must still be clickable and correctly
+   href'd even though nothing draws attention to it.
+4. **Surface matrix.** Chevron present on: board cards, the intro sample. Absent on
+   `/stop/:code` (live rows and schedule table), `/bus/:no`, `/buses`.
+5. **No-underline regression.** `a.service-no` computed `text-decoration-line` is `none` on
+   `/` and on `/stop/10001` (live rows, first/last-bus table, and an ended `.sp-off`
+   service). This is the check that the rejected option did not creep back in.
+6. **Tip lifecycle:** three showings then retired; "Got it" retires in one, from any count;
+   no tip on the gate or an empty board.
+7. **320px** on `/`, `/stop/10001`, `/bus/52`, `/buses`:
    `document.documentElement.scrollWidth === window.innerWidth` on each.
-7. **Reduced motion** (`prefers-reduced-motion: reduce`): nothing new animates, and the
+8. **Reduced motion** (`prefers-reduced-motion: reduce`): nothing new animates, and the
    vehicle-mark trails still hold still at full ink.
-8. **style-guide.md "Changing this"** checklist, run item by item.
-9. **Real-shape upstream:** `node tools/stub-datamall.mjs`, then
-   `LTA_ACCOUNT_KEY=stub-key LTA_BASE_URL=http://localhost:9099 node dist/index.js`.
-   `GET /_mode?set=empty` → "No buses at this hour."; `GET /_mode?set=500` → "Timings
-   unavailable — will retry." — with the card head, chevron and underlines intact in both
-   states.
-10. **Crawl regression:** `node tools/crawl-check.mjs` against the running server. Nothing
+9. **style-guide.md "Changing this"** checklist, run item by item.
+10. **Real-shape upstream:** `node tools/stub-datamall.mjs`, then
+    `LTA_ACCOUNT_KEY=stub-key LTA_BASE_URL=http://localhost:9099 node dist/index.js`.
+    `GET /_mode?set=empty` → "No buses at this hour."; `GET /_mode?set=500` → "Timings
+    unavailable — will retry." — with the card head and chevron intact in both states.
+11. **Crawl regression:** `node tools/crawl-check.mjs` against the running server. Nothing
     in this feature adds or removes an href, so this is a pure guard on the SEO link graph.
-11. **Screen reader pass** on `/`: card link, service link and tip each announced once,
-    with no stray punctuation.
-12. Produce a pass/fail report per item; any fail loops back to the owning task.
+12. **Screen reader pass** on `/`: card link and tip each announced once, with no stray
+    punctuation from the chevron.
+13. Produce a pass/fail report per item; any fail loops back to the owning task.
 
 ---
 
 ## Task status
 
-- [ ] T1 underline the linked service number
-- [ ] T2 chevron on the board card's stop link
-- [ ] T3 pure hint decision logic
-- [ ] T4 first-visit navigation tip
-- [ ] T5 end-to-end verification
+- [ ] T1 chevron on the board card's stop link
+- [ ] T2 pure hint decision logic
+- [ ] T3 first-visit navigation tip
+- [ ] T4 end-to-end verification
