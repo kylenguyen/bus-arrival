@@ -386,8 +386,8 @@ app.get('/api/stop/:code', (req, res) => {
  * tag there and its constant here in the same commit.
  */
 const STOP_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'stop.html'), 'utf8');
-const STOP_TITLE_TAG = '<title>bus stop · ezbus</title>';
-const STOP_OG_TITLE_TAG = '<meta property="og:title" content="bus stop · ezbus" />';
+const STOP_TITLE_TAG = '<title>bus stop arrivals · ezbus</title>';
+const STOP_OG_TITLE_TAG = '<meta property="og:title" content="bus stop arrivals · ezbus" />';
 const STOP_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/stop" />';
 
 /** Escapes text bound for the stop shell's meta tags — attribute values
@@ -410,7 +410,7 @@ app.get('/stop/:code', (req, res) => {
 
   let html = STOP_SHELL;
   if (stop) {
-    const title = escapeHtml(`${stop.code} · ${stop.description}, ${stop.roadName}`);
+    const title = escapeHtml(`${stop.code} · ${stop.description}, ${stop.roadName} · ezbus`);
     html = html
       .replace(STOP_TITLE_TAG, `<title>${title}</title>`)
       .replace(STOP_OG_TITLE_TAG, `<meta property="og:title" content="${title}" />`)

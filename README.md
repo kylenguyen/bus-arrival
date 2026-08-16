@@ -1,6 +1,7 @@
-# Bus arrival board
+# ezbus — live bus arrival times for Singapore
 
-Live Singapore bus arrival times. On the first visit, pick one of two doors —
+Live Singapore bus arrival times, served at [ezbus.sg](https://ezbus.sg). On the
+first visit, pick one of two doors —
 your current location, or an address you already know — and the 8 nearest stops
 to it appear with what is coming, when, and how full it is. An address is a
 6-digit postal code, a building name or a road; a 5-digit stop code still works

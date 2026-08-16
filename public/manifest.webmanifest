@@ -1,7 +1,7 @@
 {
-  "name": "ezbus · live bus arrivals",
+  "name": "ezbus · Singapore bus arrivals",
   "short_name": "ezbus",
-  "description": "Live bus arrival times for the stops nearest you.",
+  "description": "Live bus arrival times for any stop in Singapore. See the stops nearest you and when your next bus is coming — no sign-up, no app to install.",
   "lang": "en-SG",
   "dir": "ltr",
   "id": "/",

@@ -994,6 +994,6 @@ setInterval(() => {
 if (!serviceNo) {
   renderMissing(null);
 } else {
-  document.title = `bus ${serviceNo} · ezbus`;
+  document.title = `bus ${serviceNo} route & arrivals · ezbus`;
   void loadRoute();
 }

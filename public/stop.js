@@ -152,11 +152,12 @@ async function loadStop() {
   }
 }
 
-/** `{code} · {description}, {roadName}` — the share title and the tab title. */
+/** `{code} · {description}, {roadName} · ezbus` — must mirror the server-injected
+ *  <title> in src/index.ts, or the tab title flips on hydration. */
 function plateTitle() {
   const s = data.stop;
   const name = [s.description, s.roadName].filter(Boolean).join(', ');
-  return name ? `${s.code} · ${name}` : s.code;
+  return name ? `${s.code} · ${name} · ezbus` : `${s.code} · ezbus`;
 }
 
 // --- the plate ----------------------------------------------------------------

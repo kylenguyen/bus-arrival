@@ -2,6 +2,9 @@
   "name": "bus-arrival-board",
   "version": "0.1.0",
   "private": true,
+  "description": "ezbus — live bus arrival times for any stop in Singapore",
+  "homepage": "https://ezbus.sg",
+  "keywords": ["singapore", "bus", "arrival", "lta", "datamall"],
   "type": "module",
   "engines": {
     "node": ">=22"
