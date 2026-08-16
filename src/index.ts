@@ -7,6 +7,7 @@ import { config, mockMode } from './config.js';
 import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
 import { RouteIndex } from './routes.js';
+import { buildSitemap } from './sitemap.js';
 import { StopIndex } from './stops.js';
 import type {
   ArrivalsResponse,
@@ -371,6 +372,40 @@ app.get('/api/stop/:code', (req, res) => {
   };
   res.set('cache-control', 'public, max-age=300');
   res.json(body);
+});
+
+/** Memoised sitemap XML, keyed by the two indexes' load times. */
+let sitemapXml = '';
+let sitemapStopsLoadedAt: Date | null = null;
+let sitemapRoutesLoadedAt: Date | null = null;
+
+/**
+ * The whole site's URL list in one fetch. Built from the in-memory indexes and
+ * memoised against their `loadedAt` stamps — each reload replaces its index's
+ * `Date` object wholesale, so an identity check is enough and the ~5,400-row
+ * loop runs only when the data actually changed, not per crawl.
+ *
+ * 503 on a cold start rather than a near-empty sitemap: a crawler that caches
+ * a 2-URL file would take its own sweet time coming back for the other 5,400.
+ * Same `no-cache` as `STATIC_CACHE_CONTROL`, for the same reason — a deploy
+ * (or a data reload) must be visible on the next revalidation, not an hour on.
+ */
+app.get('/sitemap.xml', (_req, res) => {
+  if (stops.size === 0 || routes.size === 0) {
+    res.status(503).type('text/plain').send('sitemap not ready');
+    return;
+  }
+
+  if (stops.loadedAt !== sitemapStopsLoadedAt || routes.loadedAt !== sitemapRoutesLoadedAt) {
+    sitemapXml = buildSitemap(
+      stops.all().map((stop) => stop.code),
+      routes.all().map((service) => service.serviceNo),
+    );
+    sitemapStopsLoadedAt = stops.loadedAt;
+    sitemapRoutesLoadedAt = routes.loadedAt;
+  }
+
+  res.set('Cache-Control', STATIC_CACHE_CONTROL).type('application/xml').send(sitemapXml);
 });
 
 /**
