@@ -169,6 +169,24 @@
         </div>
       </section>
 
+      <!-- The first-visit navigation tip. Empty and `hidden` in the markup:
+           `app.js` fills the sentence and the button label from `HINT_COPY` and
+           `HINT_DISMISS_LABEL` in origin.js, so the copy has one source and the
+           test that pins it is the only place it is written twice.
+
+           It sits here, before `#board`, for two reasons: a screen reader meets
+           the tip before the cards it is about, and the space is already
+           reserved, so nothing below it moves when it appears.
+
+           Deliberately **not** a live region. It is not news — it is the same
+           sentence on each of its three showings — and `#board` beside it is
+           already `aria-live="polite"`, so two announcements would race over one
+           board load. -->
+      <p class="coach" id="coach" hidden>
+        <span id="coach-text"></span>
+        <button id="coach-dismiss" type="button" class="coach-x">Got it</button>
+      </p>
+
       <!-- Described by the tagline, which is where "demo timings, not live" is
            said. The tagline itself is deliberately not a live region: it changes on
            every origin switch, and announcing that each time is chatter. As a

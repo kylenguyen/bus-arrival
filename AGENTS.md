@@ -71,7 +71,7 @@ convenience for capability, the default answer is no. Concretely:
 
 - First paint should be one network round trip. `/api/board` returns stops and
   arrivals together for exactly that reason — do not split it back apart.
-- No login, no account, no server-side user state. Five `localStorage` keys, and
+- No login, no account, no server-side user state. Six `localStorage` keys, and
   the server stores nothing about anyone:
   - `bus-board.pins.v1` — the pinned stops. Orthogonal to the rest: a pin is not
     a door, and changing door leaves them alone.
@@ -105,6 +105,19 @@ convenience for capability, the default answer is no. Concretely:
     inheriting silently: it holds up to five labelled addresses, plausibly home
     and work, in cleartext on the device. Never transmitted, never seen by the
     server, cleared with the other three.
+  - `bus-board.hint.v1` — how many times the board's navigation tip has been
+    shown, `{"shown": n}`, capped at three (`HINT_MAX_SHOWINGS` in
+    [public/origin.js](public/origin.js)). It exists because the board's two doors
+    are deliberately quiet: the stop name carries a chevron, and the bus number
+    carries nothing at all, so that one sentence is the **only** thing that ever
+    teaches the number is tappable. Retiring itself is the point — chrome that
+    outlives its lesson is just a smaller board — and "Got it" writes the retired
+    record straight away, whichever showing it lands on, so the count is the
+    backstop for a rider who never presses anything rather than a second thing a
+    dismissal has to count up to. A board with no cards teaches nobody, so the gate
+    and an empty board show nothing and spend nothing. Losing the key costs at most
+    three showings of one sentence, which is why corrupt state reads as a first
+    visit.
   - `bus-route.anchor.v1` — the route page's remembered boarding stop per
     service, `{"61": "43179", …}`, most recently used last and capped at 30
     services (`ANCHOR_LRU_MAX` in [public/route-logic.js](public/route-logic.js)).
@@ -277,9 +290,12 @@ before the image build. Everything else, verify by running it:
    first screenful still leads with arrivals, nothing scrolls sideways, and every
    control is a comfortable one-handed tap. Geolocation needs a secure context — `localhost` counts, a
    bare LAN IP does not. The first visit is a different journey from every later
-   one, so clear all four keys (DevTools → Application → Local Storage) to get
-   the intro dialog back, and exercise both doors — a returning visitor never
-   sees it. Clearing only `origin.v1` leaves a Recent list behind, which is a
+   one, so clear all five `bus-board.*` keys (DevTools → Application → Local
+   Storage) to get the intro dialog back, and exercise both doors — a returning
+   visitor never sees it. The fifth is `bus-board.hint.v1`, and leaving it behind
+   is the easy mistake: the intro comes back without it, but the navigation tip
+   above the board stays retired, so a first visit is only partly reproduced.
+   Clearing only `origin.v1` leaves a Recent list behind, which is a
    fifth journey rather than a first one — and now a visible one, since recents are
    rows in the destinations card rather than contents of the search box.
 

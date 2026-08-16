@@ -182,8 +182,10 @@ read a CSS variable**. Any change to `--bg` is a change in two files.
 3. Check at 320px and 390px. `document.documentElement.scrollWidth === window.innerWidth`
    is the test; headless Chrome's `--window-size` has a 500px layout floor, so pin the
    viewport over CDP or use a real device toolbar.
-4. Check the first-run journey separately by clearing all four `bus-board.*` keys. A
+4. Check the first-run journey separately by clearing all five `bus-board.*` keys. A
    returning visitor never sees the intro dialog, and it is the only screen the wordmark
-   is introduced on.
+   is introduced on. `bus-board.hint.v1` is the one that is easy to leave behind, and it
+   is silent about it: the dialog comes back without it, but the navigation tip above the
+   board stays retired.
 5. If you touched copy in `public/origin.js`, `npm test` will tell you — those strings
    are asserted verbatim in `src/origin.test.ts`.

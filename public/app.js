@@ -9,12 +9,13 @@
 // whichever door was used last. Search and pinning stay out of the way until
 // asked for.
 //
-// Four localStorage keys, all client-side; the server is told a coordinate to
+// Five localStorage keys, all client-side; the server is told a coordinate to
 // rank stops by and remembers nothing:
 //   bus-board.pins.v1    stops kept at the top of the board
 //   bus-board.loc.v1     the last GPS fix and its age — the sole owner of both
 //   bus-board.origin.v1  which door: {mode:'gps'} or a {mode:'place', …} record
 //   bus-board.recent.v1  the last five addresses committed, most recent first
+//   bus-board.hint.v1    how many times the navigation tip has been shown
 //
 // The decisions live in ./origin.js (pure, unit tested); this file is the glue —
 // elements, `fetch`, `localStorage`, event wiring, and one assignment per apply
@@ -26,11 +27,15 @@ import {
   chipState,
   commitDecision,
   decideBoot,
+  dismissedHintRecord,
   dismissGate,
   distanceLabel,
   finderState,
   gateMessageFor,
   gateState,
+  HINT_COPY,
+  HINT_DISMISS_LABEL,
+  hintDecision,
   introVariant,
   isIncoming,
   minutesUntil,
@@ -71,6 +76,18 @@ const ORIGIN_KEY = 'bus-board.origin.v1';
  * transmitted, the server never sees it, and it clears with the other keys.
  */
 const RECENT_KEY = 'bus-board.recent.v1';
+/**
+ * How many times the navigation tip has been shown, `{shown: n}`. The whole
+ * record is a counter with a ceiling, and it exists because the board's two
+ * doors are quiet: the stop name carries a chevron and the bus number carries
+ * nothing at all, so this sentence is the only thing that ever says the number
+ * is tappable. Retiring itself is the point — chrome that outlives its lesson is
+ * just a smaller board.
+ *
+ * Nothing about a rider is in here, so it clears with the other four and costs
+ * at most three showings of one sentence if it is lost.
+ */
+const HINT_KEY = 'bus-board.hint.v1';
 
 const NEARBY_LIMIT = 8;
 const REFRESH_MS = 30_000; // arrivals refetch, visible cards only
@@ -101,6 +118,9 @@ const el = {
   gateMsg: document.getElementById('gate-msg'),
   gateAction: document.getElementById('gate-action'),
   gateAlt: document.getElementById('gate-alt'),
+  coach: document.getElementById('coach'),
+  coachText: document.getElementById('coach-text'),
+  coachDismiss: document.getElementById('coach-dismiss'),
   board: document.getElementById('board'),
   status: document.getElementById('status'),
   tagline: document.getElementById('tagline'),
@@ -181,6 +201,17 @@ let introSeen = false;
  * behind the gate.
  */
 let introDoorTaken = false;
+/**
+ * The navigation tip has had its one decision for this page load. Not "the tip
+ * is on screen": an origin switch runs `loadBoard` again, and without this the
+ * second board of the same page life would count a second showing for a tip the
+ * rider has been looking at the whole time.
+ *
+ * It latches on the first board that loads, whatever that board held. So a first
+ * load that came back empty spends this page's decision and the tip waits for
+ * the next reload — the counter is untouched, so nothing is lost but a delay.
+ */
+let hintDecided = false;
 const visible = new Set();
 
 // --- storage ------------------------------------------------------------
@@ -769,6 +800,33 @@ function stamp(when) {
 }
 
 /**
+ * The navigation tip, decided once per page load and written in the same breath
+ * as it is shown — `hintDecision` hands back the record to persist exactly when
+ * it says to show, so "shown" and "counted" cannot come apart.
+ *
+ * `boardHasCards` is passed explicitly and is never left to be inferred:
+ * `hintDecision` counts only a literal `true`, so a caller that forgets the flag
+ * loses the tip rather than teaching over a gate or an empty board. A sentence
+ * about tapping stops, with no stops on screen, teaches nobody and burns a
+ * showing.
+ */
+function maybeShowHint() {
+  if (hintDecided) return;
+  hintDecided = true;
+
+  const { show, record } = hintDecision({
+    raw: readRaw(HINT_KEY),
+    boardHasCards: board.length > 0,
+  });
+  if (!show) return;
+
+  el.coachText.textContent = HINT_COPY;
+  el.coachDismiss.textContent = HINT_DISMISS_LABEL;
+  el.coach.hidden = false;
+  write(HINT_KEY, record);
+}
+
+/**
  * Loads the board for the current origin. Resolves `true` on a successful load
  * and `false` on the failure path; a load that was coalesced into one already in
  * flight resolves `undefined`, which a caller reads as "not my load".
@@ -804,6 +862,7 @@ async function loadBoard(loc) {
       });
     }
     render();
+    maybeShowHint();
     stamp(data.fetchedAt);
     if (data.mock) flagMock();
     return true;
@@ -1678,6 +1737,15 @@ el.results.addEventListener('click', (event) => {
   const row = event.target.closest('[data-index]');
   if (!row) return;
   choosePlace(searchRows[Number(row.dataset.index)]?.place);
+});
+
+// "Got it" retires the tip outright rather than counting one more showing: the
+// rider has said the lesson landed, so `dismissedHintRecord()` jumps straight to
+// the ceiling and it never comes back — on the first showing or the third. The
+// three-showing count is the backstop for someone who never presses anything.
+el.coachDismiss.addEventListener('click', () => {
+  el.coach.hidden = true;
+  write(HINT_KEY, dismissedHintRecord());
 });
 
 el.board.addEventListener('click', (event) => {

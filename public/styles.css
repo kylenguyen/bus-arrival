@@ -861,6 +861,64 @@ input[type='search']::-webkit-search-cancel-button {
   font-size: 0.85rem;
 }
 
+/* --- the first-visit navigation tip ---
+
+   A raised surface sitting above the board, so the border is not decoration: in
+   dark mode `--shadow` draws nothing and the token border is the only edge this
+   box has.
+
+   The 3px leading bar is the same marker `.origin-row[aria-current]` draws, and
+   it is a real `border-left` here for the same reason it is one there — unlike
+   `.card.pinned`, neither box has an `overflow: hidden` for an inset shadow to
+   survive, so the border form is the plain way to say it.
+
+   Nothing here animates. It is chrome above the answer, and a panel sliding in
+   over the arrivals is the opposite of what the board is for; it appears in the
+   space it already occupies, so nothing below it moves either. */
+.coach {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-wrap: pretty;
+}
+
+/* Takes the slack and is the only thing allowed to give way, the `#origin-chip`
+   bargain again: `min-width: 0` lets the sentence wrap inside the row at 320 px
+   instead of a flex item's `min-width: auto` shoving the button off the end. */
+#coach-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 2.75rem ≈ 44 px, the floor for anything tappable — but the tip is one line of
+   chrome above the arrivals, so it takes `.pin`'s negative margins to keep a
+   44 px control from forcing a 44 px band. The row still lands near 44 px
+   overall, and the button's own hit area is the full height regardless. */
+.coach-x {
+  flex: none;
+  min-height: 2.75rem;
+  margin: -0.4rem -0.3rem -0.4rem 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.coach-x:active {
+  background: var(--border);
+}
+
 /* --- board --- */
 
 .board {
