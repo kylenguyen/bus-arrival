@@ -104,7 +104,7 @@ convenience for capability, the default answer is no. Concretely:
     pole in front of you, a 6-digit postal code is not. Worth stating rather than
     inheriting silently: it holds up to five labelled addresses, plausibly home
     and work, in cleartext on the device. Never transmitted, never seen by the
-    server, cleared with the other three.
+    server, cleared with the other four `bus-board.*` keys.
   - `bus-board.hint.v1` — how many times the board's navigation tip has been
     shown, `{"shown": n}`, capped at three (`HINT_MAX_SHOWINGS` in
     [public/origin.js](public/origin.js)). It exists because the board's two doors
