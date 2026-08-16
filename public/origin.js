@@ -1206,3 +1206,89 @@ export function isIncoming(bus, now) {
   const mins = minutesUntil(bus.estimatedArrival, now);
   return mins >= 1 && mins <= INCOMING_MINS;
 }
+
+// --- the navigation tip ---------------------------------------------------
+
+/**
+ * The first-visit tip above the board. It names **both** doors even though only
+ * the stop link carries a permanent mark: the bus number's underline was tried
+ * and rejected as too loud beside the minutes, so this sentence is the only
+ * thing that ever teaches that door exists.
+ *
+ * One source for the string, imported by `app.js` and pinned by a test, because
+ * copy that lives in markup drifts from copy that lives in a test.
+ */
+export const HINT_COPY =
+  'Tap a stop for every bus that calls there. Tap a bus number for where it goes.';
+
+/** The dismiss control's label. A word, not a `×`: the row has room for it. */
+export const HINT_DISMISS_LABEL = 'Got it';
+
+/**
+ * How many times the tip may appear before it retires itself. Three is the
+ * backstop for a rider who never presses anything — the tip is chrome above the
+ * arrivals, and chrome that outlives its lesson is just a smaller board.
+ */
+export const HINT_MAX_SHOWINGS = 3;
+
+/**
+ * The tip's showing count as held in storage. Corrupt state reads as a first
+ * visit, the same bargain `readOriginRecord` and `readRecents` already make — a
+ * broken key must cost a convenience, never the app.
+ *
+ * Erring towards `{ shown: 0 }` costs at most three showings of one sentence,
+ * where erring the other way would silently retire the only teacher the
+ * bus-number door has.
+ *
+ * @param {string | null | undefined} raw
+ * @returns {{shown: number}}
+ */
+export function readHintRecord(raw) {
+  try {
+    const record = JSON.parse(raw ?? 'null');
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return { shown: 0 };
+    // A non-negative integer or nothing: `"2"`, `-1` and `1.5` are all shapes
+    // this app never wrote, so they are hand-edited or corrupt either way.
+    if (!Number.isInteger(record.shown) || record.shown < 0) return { shown: 0 };
+    return { shown: record.shown };
+  } catch {
+    return { shown: 0 };
+  }
+}
+
+/**
+ * Whether to show the tip on this board load, and what to persist if so. The
+ * caller writes `record` when it is non-null and writes nothing when it is
+ * null, so "shown" and "counted" cannot come apart.
+ *
+ * A board with no cards gets no tip: the gate, an empty board and a refusal are
+ * all moments with nothing to point at, and a tip about tapping stops that
+ * arrives with no stops on screen teaches nobody and burns a showing. Only a
+ * literal `true` counts, the same reading `originsState` gives
+ * `geolocationSupported` — a caller that forgets the flag loses the tip, which
+ * is recoverable, rather than teaching over a gate, which is not.
+ *
+ * @param {{raw?: string | null, boardHasCards?: unknown}} input
+ * @returns {{show: boolean, record: {shown: number} | null}}
+ */
+export function hintDecision({ raw, boardHasCards }) {
+  if (boardHasCards !== true) return { show: false, record: null };
+
+  const { shown } = readHintRecord(raw);
+  if (shown >= HINT_MAX_SHOWINGS) return { show: false, record: null };
+
+  return { show: true, record: { shown: shown + 1 } };
+}
+
+/**
+ * What pressing "Got it" persists. It jumps straight to the retired state
+ * rather than incrementing: a dismissal is the rider saying the lesson landed,
+ * so it ends the tip whether it arrives on the first showing or the third. The
+ * counter is the backstop for silence, not a second thing a dismissal has to
+ * count up to.
+ *
+ * @returns {{shown: number}}
+ */
+export function dismissedHintRecord() {
+  return { shown: HINT_MAX_SHOWINGS };
+}

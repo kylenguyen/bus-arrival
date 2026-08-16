@@ -1886,3 +1886,134 @@ describe('isIncoming', () => {
     assert.equal(origin.isIncoming({ estimatedArrival: 'not a date', monitored: true }, now), false);
   });
 });
+
+describe('readHintRecord', () => {
+  it('reads a first visit from an absent or empty key', () => {
+    assert.deepEqual(origin.readHintRecord(null), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord(undefined), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord(''), { shown: 0 });
+  });
+
+  // The cost of guessing wrong here is at most three showings of one sentence,
+  // which is why every unrecognised shape reads as a first visit rather than as
+  // a retired tip.
+  it('degrades to a first visit for anything that is not an object with a count', () => {
+    assert.deepEqual(origin.readHintRecord('not json'), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord('{}'), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord('[]'), { shown: 0 });
+  });
+
+  // Three shapes this app never writes, so each one is hand-edited or corrupt.
+  // A string count would sail through `>=` comparisons; a fraction would count
+  // up forever without ever reaching the threshold.
+  it('rejects a stringy, negative or fractional count', () => {
+    assert.deepEqual(origin.readHintRecord('{"shown":"2"}'), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord('{"shown":-1}'), { shown: 0 });
+    assert.deepEqual(origin.readHintRecord('{"shown":1.5}'), { shown: 0 });
+  });
+
+  it('keeps a real count, including one already past the threshold', () => {
+    assert.deepEqual(origin.readHintRecord('{"shown":2}'), { shown: 2 });
+    assert.deepEqual(origin.readHintRecord('{"shown":99}'), { shown: 99 });
+  });
+});
+
+describe('hintDecision', () => {
+  it('counts up on each of the three showings and then retires', () => {
+    assert.deepEqual(origin.hintDecision({ raw: null, boardHasCards: true }), {
+      show: true,
+      record: { shown: 1 },
+    });
+    assert.deepEqual(origin.hintDecision({ raw: '{"shown":1}', boardHasCards: true }), {
+      show: true,
+      record: { shown: 2 },
+    });
+    assert.deepEqual(origin.hintDecision({ raw: '{"shown":2}', boardHasCards: true }), {
+      show: true,
+      record: { shown: 3 },
+    });
+    assert.deepEqual(origin.hintDecision({ raw: '{"shown":3}', boardHasCards: true }), {
+      show: false,
+      record: null,
+    });
+  });
+
+  // A count past the threshold can only come from a hand-edited key, but it
+  // must not wrap round into a fourth showing.
+  it('stays retired above the threshold', () => {
+    assert.deepEqual(origin.hintDecision({ raw: '{"shown":99}', boardHasCards: true }), {
+      show: false,
+      record: null,
+    });
+  });
+
+  // The gate, an empty board and a refusal are all moments with nothing to
+  // point at. `record: null` at every rung is the part that matters: the caller
+  // writes only what it is handed, so a suppressed tip cannot burn a showing.
+  it('never shows and never writes on a board with no cards', () => {
+    for (const raw of [null, '{"shown":1}', '{"shown":2}', '{"shown":3}']) {
+      assert.deepEqual(origin.hintDecision({ raw, boardHasCards: false }), {
+        show: false,
+        record: null,
+      });
+    }
+  });
+
+  // Same reading `originsState` gives `geolocationSupported`: a caller that
+  // forgets the flag loses the tip rather than teaching over a gate.
+  it('treats a missing flag as no cards', () => {
+    assert.deepEqual(origin.hintDecision({ raw: null }), { show: false, record: null });
+  });
+
+  // Decision 3: "Got it" is the rider saying the lesson landed, so it ends the
+  // tip in one step from any count, not a "seen once" increment.
+  it('is retired in one step by a dismissal, from any starting count', () => {
+    for (const raw of [null, '{"shown":1}', '{"shown":2}']) {
+      const before = origin.hintDecision({ raw, boardHasCards: true });
+      assert.equal(before.show, true);
+
+      const dismissed = JSON.stringify(origin.dismissedHintRecord());
+      assert.deepEqual(origin.hintDecision({ raw: dismissed, boardHasCards: true }), {
+        show: false,
+        record: null,
+      });
+    }
+  });
+});
+
+describe('dismissedHintRecord', () => {
+  it('is the retired state itself, not one more than the last count', () => {
+    assert.deepEqual(origin.dismissedHintRecord(), { shown: origin.HINT_MAX_SHOWINGS });
+    assert.deepEqual(origin.dismissedHintRecord(), { shown: 3 });
+  });
+
+  // It is stringified into storage and read back by `readHintRecord`, so the
+  // round trip has to survive its own JSON.
+  it('survives a round trip through readHintRecord', () => {
+    const raw = JSON.stringify(origin.dismissedHintRecord());
+    assert.equal(raw, '{"shown":3}');
+    assert.deepEqual(origin.readHintRecord(raw), { shown: 3 });
+  });
+});
+
+// The copy has one source — `app.js` fills the markup from these, so `index.html`
+// cannot drift the way it can for `ADDRESS_DOOR_LABEL`, which static markup has
+// to write out by hand. Pinned verbatim all the same: this sentence is the only
+// thing that teaches the bus-number door, and a well-meaning edit that drops its
+// second half would remove that teaching silently.
+describe('hint copy', () => {
+  it('names both doors, verbatim', () => {
+    assert.equal(
+      origin.HINT_COPY,
+      'Tap a stop for every bus that calls there. Tap a bus number for where it goes.',
+    );
+  });
+
+  it('uses Got it on the dismiss control', () => {
+    assert.equal(origin.HINT_DISMISS_LABEL, 'Got it');
+  });
+
+  it('retires after three showings', () => {
+    assert.equal(origin.HINT_MAX_SHOWINGS, 3);
+  });
+});
