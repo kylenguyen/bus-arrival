@@ -899,24 +899,50 @@ input[type='search']::-webkit-search-cancel-button {
   min-width: 0;
 }
 
-/* 2.75rem ≈ 44 px, the floor for anything tappable — but the tip is one line of
-   chrome above the arrivals, so it takes `.pin`'s negative margins to keep a
-   44 px control from forcing a 44 px band. The row still lands near 44 px
-   overall, and the button's own hit area is the full height regardless. */
+/* Filled accent, the same pair `button.primary` uses: this is the one control in
+   the tip, and the accent is what says so everywhere else on the page. It costs
+   the board nothing — the tip is chrome above the cards, outside the two colour
+   families a card runs (see `.tag-icon`), so no crowding or timing colour is
+   competing with it here.
+
+   2.75rem ≈ 44 px is the floor for anything tappable, but drawn at 44 px the
+   filled pill turned one line of chrome into a band as tall as a card head. So
+   the paint is 2rem and the target is the full 44 px, extended past the paint by
+   `::after` below rather than shrunk to it. The negative margins are `.pin`'s
+   trick, keeping the pill from setting the row's height. */
 .coach-x {
+  position: relative;
   flex: none;
-  min-height: 2.75rem;
-  margin: -0.4rem -0.3rem -0.4rem 0;
-  padding: 0.5rem 0.7rem;
+  min-height: 2rem;
+  margin: -0.15rem -0.1rem -0.15rem 0;
+  padding: 0.3rem 0.7rem;
+  border-color: transparent;
   border-radius: 4px;
-  background: var(--surface-2);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
 }
 
+/* The thumb target the pill no longer draws: 44 px centred on the button, its
+   own width, overflowing into the tip's padding where there is nothing else to
+   hit. A pseudo-element of the button is hit-tested as the button, so this
+   costs no markup and no listener. */
+.coach-x::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 2.75rem;
+  transform: translateY(-50%);
+}
+
+/* No pressed token exists for a filled accent — this is the first one — so the
+   press is a dim of whatever the scheme's accent is, which holds in both. */
 .coach-x:active {
-  background: var(--border);
+  filter: brightness(0.92);
 }
 
 /* --- board --- */
@@ -1260,6 +1286,21 @@ input[type='search']::-webkit-search-cancel-button {
   flex: none;
   height: 0.7rem;
   width: auto;
+  /* Pulled left by the trail gutter, so the bus lines up under the service number
+     instead of a few pixels inside it.
+
+     Every viewBox is cropped to include the empty band the trails drift through
+     (see `trail()` in app.js), and that band is on the left — so the box's left
+     edge is not the drawing's, and aligning boxes left the *bus* looking indented
+     under the number. The gutter is 7 user units on the double decker and 6.5 on
+     the other two, which at this height is 0.23rem and 0.27rem; one shared 0.25rem
+     splits them and leaves each within a third of a pixel of the number's edge.
+
+     A margin and not a viewBox change on purpose: the crop is what keeps a mark
+     from shifting sideways when its trails appear or vanish, so it has to stay
+     exactly as drawn. The trails now drift in the card's own padding, which holds
+     ~13px and is empty. */
+  margin-left: -0.25rem;
 }
 
 /* The trails behind a vehicle mark whose bus is nearly here, drifting. Two dashes held still

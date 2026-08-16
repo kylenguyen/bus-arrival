@@ -1219,7 +1219,7 @@ export function isIncoming(bus, now) {
  * copy that lives in markup drifts from copy that lives in a test.
  */
 export const HINT_COPY =
-  'Tap a stop for every bus that calls there. Tap a bus number for where it goes.';
+  'Tap a bus stop for more information. Tap a bus number for where it goes.';
 
 /** The dismiss control's label. A word, not a `×`: the row has room for it. */
 export const HINT_DISMISS_LABEL = 'Got it';

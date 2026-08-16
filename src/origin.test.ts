@@ -2005,7 +2005,7 @@ describe('hint copy', () => {
   it('names both doors, verbatim', () => {
     assert.equal(
       origin.HINT_COPY,
-      'Tap a stop for every bus that calls there. Tap a bus number for where it goes.',
+      'Tap a bus stop for more information. Tap a bus number for where it goes.',
     );
   });
 
