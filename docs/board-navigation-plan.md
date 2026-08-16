@@ -310,7 +310,48 @@ needed; a fix commits as `T4: <fix>`.
 
 ## Task status
 
-- [ ] T1 chevron on the board card's stop link
-- [ ] T2 pure hint decision logic
-- [ ] T3 first-visit navigation tip
-- [ ] T4 end-to-end verification
+- [x] T1 chevron on the board card's stop link — `7b782b1`
+- [x] T2 pure hint decision logic — `4249110`
+- [x] T3 first-visit navigation tip — `443c699`
+- [x] T4 end-to-end verification — 13/13 items pass; one fix, `ce803b1`
+
+### Divergences from the plan as written (16 Aug 2026)
+
+1. **`hintDecision` gates on `boardHasCards !== true`, not `=== false`.** The
+   stricter reading matches the house idiom for `geolocationSupported` in
+   `originsState`: a caller that forgets the flag loses the tip, which is
+   recoverable, rather than teaching over a gate, which is not. Callers must pass
+   `boardHasCards: board.length > 0` explicitly.
+2. **Three stale documentation lines were corrected, not the one the plan named.**
+   T3's scope said "one line of AGENTS.md" (§4's "clear all four keys"). Also
+   contradicted, and fixed: `AGENTS.md:74`'s key enumeration, which counts
+   `bus-route.anchor.v1` and so went five → **six**; and `style-guide.md:185`,
+   which is the checklist T4 item 9 runs — left stale it would have produced a
+   phantom failure in the final sweep. `AGENTS.md:107`'s "cleared with the other
+   three" was missed by T3 and caught by T4. Two counts coexist on purpose: six
+   `localStorage` keys in total, five scoped to `bus-board.*`.
+3. **The coach mark's accent bar is a real `border-left`, not the inset
+   box-shadow.** The plan called for reusing the marker `.card.pinned` and
+   `.origin-row[aria-current]` draw, and those two differ:
+   `.origin-row[aria-current]` already uses `border-left: 3px solid var(--accent)`
+   and only `.card.pinned` uses `box-shadow: inset 3px 0 0`, because it has
+   `overflow: hidden` for a border to fall foul of. `.coach` has no such
+   constraint, so it matches the former exactly.
+
+### Notes for whoever picks this up next
+
+- **Mock mode cannot produce an empty board.** `StopIndex.nearby()` has no radius
+  cutoff, so any Singapore coordinate returns 8 of the 12 mock stops. The
+  "no tip on an empty board" rule was verified by overriding `fetch` to return
+  `{stops:[]}`.
+- **Re-running T4 item 10: test `500` before `empty`, or restart in between.**
+  `TtlCache` is stale-on-error by design, so a `500` following an `empty` re-serves
+  the cached `[]` and renders "No buses at this hour." instead of "Timings
+  unavailable — will retry." That is the cache behaving correctly, not a defect.
+- **Both degraded upstream states still show the tip**, since the board has 8 real
+  cards with working stop links and only the timings are missing. Consistent with
+  the contract, but "Timings unavailable" beside "Tap a stop for every bus that
+  calls there" is an odd pairing. If unwanted, it belongs to T3's call site.
+- **Never verified here:** a real screen reader (the accessibility tree was
+  asserted over CDP instead), a real iPhone, and storage genuinely disabled in
+  Firefox (simulated by making `localStorage` throw).
