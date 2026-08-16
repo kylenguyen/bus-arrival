@@ -3,6 +3,7 @@ import path from 'node:path';
 import express from 'express';
 
 import { arrivalsForMany } from './arrivals.js';
+import { BUSES_LIST_TARGET, buildBusesIndex } from './buses-page.js';
 import { config, mockMode } from './config.js';
 import { upstreamStats } from './lta.js';
 import { PlaceIndex } from './places.js';
@@ -489,6 +490,14 @@ const ROUTE_OG_URL_TAG = '<meta property="og:url" content="https://ezbus.sg/bus"
 const ROUTE_CANONICAL_TAG = '<link rel="canonical" href="https://ezbus.sg/" />';
 
 /**
+ * The /buses shell. Its head is entirely static — one URL, one title, so
+ * nothing to inject there; the only swap target is the body's #buses-list
+ * section, whose anchor lives with its builder in buses-page.ts, where a unit
+ * test pins it to the shell.
+ */
+const BUSES_SHELL = readFileSync(path.join(import.meta.dirname, '..', 'public', 'buses.html'), 'utf8');
+
+/**
  * The stop page shell. Lenient about `:code` for the same reason `/bus/:service`
  * is — the client renders its own guard, and a 404 here would swap that page for
  * the browser's. When the code is a known stop, the head tags AND three body
@@ -584,6 +593,37 @@ app.get('/bus/:service', (req, res) => {
       );
   }
 
+  res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);
+});
+
+/**
+ * The services directory — every service in the fleet, one page, no
+ * pagination. Rendered per request from `routes.all()` (already in
+ * bus-directory order; a few hundred rows, so the loop is trivia) with each
+ * service's lead direction joined for its endpoint names, the same
+ * `servicePayloads` join `/bus/:service` uses. Cold start (route feed not in
+ * yet) serves the shell untouched — its generic section invites the reader to
+ * the board, which is better than an empty directory a crawler might cache.
+ */
+app.get('/buses', (_req, res) => {
+  const services = routes.all();
+  let html = BUSES_SHELL;
+  if (services.length > 0) {
+    const rows = services.map((service) => {
+      // Direction 1 summarises the row; a service the feed only knows
+      // backwards still gets endpoints from direction 2, same as /bus/:service.
+      const lead = servicePayloads(service)[0];
+      return {
+        serviceNo: service.serviceNo,
+        operator: service.operator,
+        loop: service.loop,
+        loopDesc: service.loopDesc,
+        origin: lead?.origin.description ?? '',
+        destination: lead?.destination.description ?? '',
+      };
+    });
+    html = html.replace(BUSES_LIST_TARGET, buildBusesIndex(rows));
+  }
   res.set('Cache-Control', STATIC_CACHE_CONTROL).type('html').send(html);
 });
 

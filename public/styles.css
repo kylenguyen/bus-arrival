@@ -1437,6 +1437,18 @@ input[type='search']::-webkit-search-cancel-button {
   margin: 0 0.35rem;
 }
 
+/* The footer's one nav link (→ /buses, and → / from buses.html). Muted like
+   the fine print around it — the underline is what says "link" at this size —
+   and inline-flex to the 44px floor, because it is tappable. */
+.footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Very narrow phones (≤ 340 px): drop the third bus rather than let the
    columns crush the first two. */
 @media (max-width: 21.5rem) {
@@ -1521,13 +1533,15 @@ a.card-link {
    44px tap target from costing a whole row of air under the masthead. The stop
    page shares the rule — same line, same place, one look. */
 .route-main .back,
-.stop-main .back {
+.stop-main .back,
+.buses-main .back {
   margin: -0.5rem 0 0.1rem;
   font-size: 0.8rem;
 }
 
 .route-main .back a,
-.stop-main .back a {
+.stop-main .back a,
+.buses-main .back a {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
@@ -2359,7 +2373,8 @@ h1.card-title {
 /* Nearby-stop rows: the .rt-results idiom — name leads, road and distance
    trail right, the whole row one 44px link. `.rt-stops` is the route page's
    server-rendered stop list (an <ol> — the order is the route — so the
-   list-style reset matters there) wearing the same rows. */
+   list-style reset matters there) wearing the same rows; the /buses directory
+   (`.bus-index`, src/buses-page.ts) wears them too. */
 .sp-nearby,
 .rt-stops {
   list-style: none;
@@ -2406,6 +2421,15 @@ h1.card-title {
   font-size: 0.75rem;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* /buses directory rows: the same row idiom, led by the service number in the
+   stencil face — the board's own argument for `.service-no`, a number matched
+   against the blind on the front of the bus. A fixed slot the width of the
+   board's service column, so ~370 endpoint summaries line up in one scan. */
+.bus-index .service-no {
+  flex: none;
+  width: var(--col-service);
 }
 
 /* --- route page: the server-rendered static body ---

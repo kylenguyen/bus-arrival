@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en-SG">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Tints the browser chrome so the page does not end at a white seam.
+         These two duplicate `--bg` in each scheme and cannot read a CSS variable.
+         Keep them in step with the token blocks at the top of styles.css. -->
+    <meta name="theme-color" content="#e7ebe7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121715" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Every public bus service in Singapore in one list — number, route and operator — each linking to its full stop-by-stop route with live arrival times." />
+    <!-- This head is entirely static, unlike stop.html and route.html: the page
+         is one URL with one title, so there is nothing to inject per request.
+         The only swap target in this file is the #buses-list section in the
+         body, paired with BUSES_LIST_TARGET in src/buses-page.ts. -->
+    <title>all bus services in Singapore · ezbus</title>
+    <meta property="og:title" content="all bus services in Singapore · ezbus" />
+    <meta property="og:description" content="Every public bus service in Singapore in one list — number, route and operator." />
+    <meta property="og:url" content="https://ezbus.sg/buses" />
+    <link rel="canonical" href="https://ezbus.sg/buses" />
+    <meta property="og:site_name" content="ezbus" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_SG" />
+    <meta property="og:image" content="https://ezbus.sg/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Same reasoning as index.html: preloaded so the stencilled service
+         numbers swap at first paint rather than a beat after it. `crossorigin`
+         is required even same-origin — fonts always fetch in CORS mode. -->
+    <link
+      rel="preload"
+      href="/fonts/archivo-narrow-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%230a6a72'/><g fill='none' stroke='%23ffffff' stroke-width='2' stroke-linejoin='round'><rect x='6' y='7' width='20' height='14' rx='3'/><path d='M6 14h20'/></g><g fill='%23ffffff'><circle cx='11' cy='24' r='2'/><circle cx='21' cy='24' r='2'/></g></svg>"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-row">
+        <!-- Same wordmark as the board, but a link: on this page it is the way
+             back as well as the name, and the board is one tap away from
+             anywhere in the directory. -->
+        <h1><a href="/" aria-label="ezbus — back to the arrivals board"><span class="mark-ez">ez</span><span>bus</span></a></h1>
+      </div>
+    </header>
+
+    <main class="buses-main">
+      <p class="back"><a href="/">← Back to board</a></p>
+
+      <!-- The services directory, server-rendered for the whole fleet: every
+           service in bus-directory order, each row linking its route page. A
+           server-swapped body region exactly like the ones on stop.html and
+           route.html: GET /buses replaces the whole block, by exact string
+           match against BUSES_LIST_TARGET in src/buses-page.ts. Served
+           unreplaced (cold route index, or /buses.html via express.static)
+           this generic sentence is the page. There is no script on this page —
+           nothing here is live, so nothing needs hydrating. Keep the block on
+           one line, and edit it and its constant in the same commit, or the
+           injection silently stops. -->
+      <section id="buses-list"><p class="card-msg">Looking for a Singapore bus service? <a href="/">Open the ezbus board</a> to see every bus arriving near you, live.</p></section>
+    </main>
+
+    <footer class="footer">
+      <span>Data © LTA, via DataMall</span>
+      <span class="dot">·</span>
+      <a href="/">live bus arrivals</a>
+    </footer>
+  </body>
+</html>
