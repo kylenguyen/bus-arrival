@@ -441,8 +441,16 @@ app.get('/sitemap.xml', (_req, res) => {
   }
 
   if (stops.loadedAt !== sitemapStopsLoadedAt || routes.loadedAt !== sitemapRoutesLoadedAt) {
+    // Stops no service calls at are excluded: their only inbound links are
+    // nearby-stop links on other stop pages, which puts them beyond the
+    // depth-3 crawl budget the plan requires. Their pages still serve,
+    // self-canonical, reachable via those links — they are just not
+    // advertised. Decision recorded in docs/seo-implementation-plan.md (T8).
     sitemapXml = buildSitemap(
-      stops.all().map((stop) => stop.code),
+      stops
+        .all()
+        .filter((stop) => routes.servicesAt(stop.code).length > 0)
+        .map((stop) => stop.code),
       routes.all().map((service) => service.serviceNo),
     );
     sitemapStopsLoadedAt = stops.loadedAt;

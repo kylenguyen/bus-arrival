@@ -4,12 +4,19 @@
  * docs/seo-implementation-plan.md). Points at a running server and checks the
  * whole discovery story a search engine would follow:
  *
- *   1. /robots.txt names a sitemap; the sitemap parses and its URL count is
- *      exactly 2 + healthz.stops + healthz.routes.
- *   2. Every sitemap URL serves 200; every /stop/ page carries an <h1> and
- *      parseable JSON-LD; every /bus/ page carries at least one <ol> and
- *      parseable JSON-LD; every page carries exactly one canonical tag whose
- *      href is its own canonical URL.
+ *   1. /robots.txt names a sitemap; the sitemap parses; its /bus/ URL count
+ *      equals healthz.routes exactly, and its /stop/ URL count is > 0 and
+ *      ≤ healthz.stops — stops served by no bus are deliberately excluded
+ *      (they would sit beyond the depth-3 budget; see the dated note under
+ *      T8 in docs/seo-implementation-plan.md), so stop coverage is bounded
+ *      two-sided by the link-graph checks below instead of by an exact count.
+ *   2. Every sitemap URL serves 200; every /stop/ page carries an <h1>,
+ *      parseable JSON-LD, and at least one /bus/ link (no over-inclusion: a
+ *      sitemap stop must have services); every /bus/ page carries at least
+ *      one <ol> and parseable JSON-LD, and every /stop/ href it emits must be
+ *      in the sitemap (no under-inclusion: a serviced stop must be listed);
+ *      every page carries exactly one canonical tag whose href is its own
+ *      canonical URL.
  *   3. A BFS over internal hrefs from `/` reaches every sitemap URL within
  *      depth 3 (home → /buses → /bus/N → /stop/C).
  *
@@ -133,9 +140,18 @@ const sitemap = await get(sitemapPath ?? '/sitemap.xml');
 if (sitemap.status !== 200) fail(`${sitemapPath}: expected 200, got ${sitemap.status}`);
 
 const locs = [...sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-const expectedCount = 2 + health.stops + health.routes;
-if (locs.length !== expectedCount) {
-  fail(`sitemap: ${locs.length} URLs, expected 2 + ${health.stops} stops + ${health.routes} routes = ${expectedCount}`);
+// Two-sided count check without an exact stop total: every route is listed;
+// stops may be fewer than healthz.stops (service-less stops are excluded)
+// but never more, and never zero. Exact stop coverage is asserted by the
+// under/over-inclusion link checks in step 2.
+const routeLocs = locs.filter((loc) => loc.startsWith(`${CANONICAL_ORIGIN}/bus/`)).length;
+const stopLocs = locs.filter((loc) => loc.startsWith(`${CANONICAL_ORIGIN}/stop/`)).length;
+if (routeLocs !== health.routes) {
+  fail(`sitemap: ${routeLocs} /bus/ URLs, expected exactly healthz.routes = ${health.routes}`);
+}
+if (stopLocs === 0) fail('sitemap: no /stop/ URLs at all');
+if (stopLocs > health.stops) {
+  fail(`sitemap: ${stopLocs} /stop/ URLs, more than healthz.stops = ${health.stops}`);
 }
 
 /** @type {Map<string, string>} local pathname → canonical URL, from the sitemap. */
@@ -146,7 +162,10 @@ for (const loc of locs) {
   else pages.set(path, loc === CANONICAL_ORIGIN ? `${CANONICAL_ORIGIN}/` : loc);
 }
 
-// --- 2. Every sitemap URL: 200, canonical, h1/ol, JSON-LD ------------------
+// --- 2. Every sitemap URL: 200, canonical, h1/ol, JSON-LD, inclusion -------
+
+/** @type {Map<string, string>} /stop/ path seen on a /bus/ page → the first /bus/ page that linked it. */
+const stopLinksFromRoutes = new Map();
 
 let fetched = 0;
 await eachLimit([...pages.entries()], FETCH_CONCURRENCY, async ([path, canonicalUrl]) => {
@@ -165,12 +184,26 @@ await eachLimit([...pages.entries()], FETCH_CONCURRENCY, async ([path, canonical
     if (!/<h1[\s>]/.test(page.body)) fail(`${path}: no <h1>`);
     const { count } = jsonLdBlocks(path, page.body);
     if (count === 0) fail(`${path}: no JSON-LD block`);
+    // No over-inclusion: a stop in the sitemap must have at least one service
+    // calling there — a service-less stop belongs out of the sitemap.
+    if (!page.body.includes('href="/bus/')) fail(`${path}: in sitemap but links no /bus/ page (service-less stop over-included)`);
   } else if (path.startsWith('/bus/')) {
     if (!/<ol[\s>]/.test(page.body)) fail(`${path}: no <ol>`);
     const { count } = jsonLdBlocks(path, page.body);
     if (count === 0) fail(`${path}: no JSON-LD block`);
+    for (const link of internalLinks(page.body)) {
+      if (link.startsWith('/stop/') && !stopLinksFromRoutes.has(link)) {
+        stopLinksFromRoutes.set(link, path);
+      }
+    }
   }
 });
+
+// No under-inclusion: every stop some route page links to has a service (that
+// route), so it must be advertised in the sitemap.
+for (const [stopPath, viaRoute] of stopLinksFromRoutes) {
+  if (!pages.has(stopPath)) fail(`${stopPath}: linked from ${viaRoute} but missing from sitemap (serviced stop under-included)`);
+}
 
 // --- 3. BFS from / — every sitemap URL within depth 3 ----------------------
 

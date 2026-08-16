@@ -466,6 +466,20 @@ domain in Google Search Console and Bing Webmaster Tools, submit
 Expect long-tail impressions to appear over 8–12 weeks. These are noted here
 so they are not forgotten; they are not agent tasks.
 
+**Divergence, 16 Aug 2026 — service-less stops are excluded from the
+sitemap.** The T8 crawl found that stops no service calls at (in the stub
+dataset, 50 of 250) have no inbound links except nearby-stop links on other
+stop pages, putting them at depth 4 — outside the depth-3 definition of done.
+Consistent with the "no browse pages" decision, the sitemap route in
+`src/index.ts` now emits `/stop/<code>` only where `routes.servicesAt(code)`
+is non-empty. The pages themselves are unchanged: they still serve 200,
+self-canonical, reachable via nearby links — they are just not advertised.
+Accordingly, `tools/crawl-check.mjs` asserts the sitemap's stop count as
+`0 < stops ≤ healthz.stops` (routes stay exact) and pins coverage two-sided
+through the link graph instead: every `/stop/` href on a `/bus/` page must be
+in the sitemap, and every sitemap `/stop/` page must link at least one
+`/bus/` page.
+
 ---
 
 ## Definition of done (whole feature)
