@@ -211,6 +211,14 @@
            built from the board’s own classes rather than a mock of them, so it
            cannot drift into promising a layout the board does not produce.
 
+           That is why the name carries the board’s `.card-chev`: the live card’s
+           name is the door to /stop/:code and wears the chevron, so a sample
+           without one would show a card the board never draws. It needs no
+           `<a class="card-link">` around it — that rule contributes no visible
+           styling (`color: inherit`, `text-decoration: none`), so the bare spans
+           already render identically, and a link element in a decorative,
+           `aria-hidden` sample would only add a node with nowhere to go.
+
            Four ids have readers, and only the first two are `showIntro()`’s:
              #intro-gps     the location door, and the outermost tappable node —
                             `showIntro()` removes it when location cannot work
@@ -257,7 +265,7 @@
           <div class="card-head">
             <div class="card-title">
               <span class="meta-code">43179</span>
-              <span class="card-name">Opp Blk 123</span>
+              <span class="card-name">Opp Blk 123<span class="card-chev" aria-hidden="true">›</span></span>
               <span class="card-sub">
                 <span class="meta-where">Ang Mo Kio Ave 3</span>
                 <span class="meta-dist">180 m</span>

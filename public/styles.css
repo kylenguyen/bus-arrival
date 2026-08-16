@@ -1517,11 +1517,27 @@ a.service-no {
    so is the route spine's anchored stop name. Same argument as a.service-no:
    inherit the ink, no underline — an accent block leading every card would
    out-shout the minutes below it. `.card-link` is a block so the two lines it
-   wraps keep the exact geometry they had as bare spans in `.card-title`. */
+   wraps keep the exact geometry they had as bare spans in `.card-title`.
+
+   It does carry one mark, though: `.card-chev` trails the name, because with
+   neither colour nor underline nothing on the card said it went anywhere. A
+   muted chevron after the description is the quietest thing that says "door"
+   and it is the *only* one — a.service-no above stays unmarked on purpose. */
 a.card-link {
   display: block;
   color: inherit;
   text-decoration: none;
+}
+
+/* Trails the stop name inside `.card-name`, never as a sibling: `.card-name`
+   is a block, so a sibling would drop onto its own line. Markup rather than a
+   `::after`, because generated content is announced by most screen readers and
+   this mark says nothing the link text does not — hence `aria-hidden` on the
+   span. `--muted` and the regular weight keep it behind the name it follows. */
+.card-chev {
+  margin-left: 0.3rem;
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .spine a.here-link {
