@@ -1,6 +1,8 @@
 # Implementation plan: route-page bus position mark
 
-Status: **approved 17 Aug 2026** — not yet implemented.
+Status: **approved 17 Aug 2026, implemented 17 Aug 2026.** Read the
+[task status](#task-status) and the divergences below before trusting the body
+of this document.
 
 ## Feature
 
@@ -225,3 +227,86 @@ failing step.
    plausibly, never renders two marks, disappears cleanly when data goes
    stale.
 7. Defects → fix commits, re-run the failing step plus `npm test`.
+
+---
+
+## Task status
+
+- [x] T1 extract vehicle marks into `public/vehicle-marks.js` — `1574dd1`
+      (merged `346d89b`)
+- [x] T2 `busMarkPlacement` — the placement ladder as data — `8c6738e`
+      (merged `85c5f22`)
+- [x] T3 route bus mark — shared silhouettes, inline right — `743ca17`
+- [x] T4 end-to-end verification — every checklist item passes; two fixes,
+      `5db4a16` (the mark's trails crowding the ETA) and `82d65c1` (a
+      pre-existing unguarded `VEHICLE` lookup in `renderTags`)
+
+T4 ran the placement ladder × vehicle-type matrix in headless Chrome against
+mock mode, with `/api/arrivals` intercepted so each rung could be forced; the
+board-versus-route comparison, the responsive and reduced-motion checks and the
+accessibility tree were read the same way. `LTA_ACCOUNT_KEY` was unset, so the
+live smoke was run against `tools/stub-datamall.mjs` instead.
+
+### Divergences from the plan as written (17 Aug 2026)
+
+1. **A second pure function, `markTarget`, joined `busMarkPlacement`.** The plan
+   put row targeting in T3's renderer. It is in `route-logic.js` because the
+   ladder answers what the timings support and this answers which row the fold
+   plan can carry it on, and the second depends on what the *user* has spliced
+   open — a different kind of fact, and one worth unit-testing without a DOM.
+2. **`from === 0` gets no approx treatment.** The plan's table says `beyond`
+   lands on the "origin-terminus row if `from === 0`" and leaves the degrading
+   open. It takes neither the `title` nor the class: there is no row above the
+   origin because there is no route above it, so "at or before stop 0" is a
+   precise reading — the bus has not left the terminus — not a fallback.
+3. **A gap too small to fold is treated exactly like an expanded fold.** The
+   plan named only the expanded case. Under `FOLD_MIN` the upstream stops render
+   individually and there is no fold row to carry the mark, which is the same
+   situation arrived at differently, so it takes the same stop `from − 1` with
+   the approx treatment.
+4. **`approx`'s `title` sits on the `.bus-mark` wrapper, not on the icon.** The
+   icon's own `title` (`Double deck`) comes from the shared `vehicleIcon` and
+   could not be replaced without either forking the module or dropping the
+   vehicle name. **Consequence, measured:** a pointer over the mark resolves the
+   *inner* title, so the approx sentence is unreachable by hover. On the
+   shipping target that costs nothing — there is no cursor on a phone and
+   `title` never shows — and the visible signal for approx is the 0.78 opacity.
+   Revisit only alongside a decision about what the mark should say out loud.
+5. **The mark dropped the emoji's `aria-hidden` and carries the board's
+   `aria-label`.** Verified in the accessibility tree over CDP: the marked row
+   exposes `Double deck bus` / `Bendy bus` / `Single deck bus`, and `Bus` for a
+   type we were never sent.
+6. **`Arr` is drawn at two different boundaries and it does not show.**
+   `busMarkPlacement` takes the anchor rung at `ts − now <= 0`; `etaInline`
+   floors to whole minutes, so a row reads `arr` from 59 s out. The window
+   between them is a stop whose inline ETA says `arr` while the placement is
+   still `segment` — which is correct on both counts, since that row is an
+   upstream stop and not the anchor. Traced by T3, and T4 found no reachable
+   case where the two disagree about the *same* row.
+7. **One layout rule of the board's did not come free after all**, contrary to
+   "sizes, trails, reduced-motion come free". `.tag-svg`'s `margin-left:
+   -0.25rem` aligns a mark that sits at the *left* of its column; inline right
+   of an ETA it eats 4px of the 5.6px gap and puts the trails against the "min".
+   Cancelled for `.spine .bus-mark` only — `5db4a16`.
+
+### Notes for whoever picks this up next
+
+- **Stock mock routes are 1–3 stops long**, so no rung below `anchor` can be
+  reached with them. T3 and T4 both added a throwaway 12-stop service `999` to
+  `SERVICES_BY_STOP` and `ROUTE_SHAPES` in `src/mock.ts` (keeping
+  `src/mock.test.ts`'s inverse-map invariant) and reverted it before committing.
+  Forcing a *rung* additionally needs the timings under control: T4 intercepted
+  `/api/arrivals` in the browser and left everything else genuinely served.
+- **The DataMall stub is a poor fixture for the ladder.** Its per-stop timings
+  come out equal across a window, which is `beyond` and only ever `beyond`. It
+  is the right fixture for "one mark, never two" and for the disappearance.
+- **Restoring `_mode=ok` does not bring the mark back in the same tab.**
+  `cache.ts` is stale-on-error with per-key backoff, so an `empty` or `500` spell
+  outlives the mode switch by up to a minute; a fresh load recovers immediately.
+  Documented behaviour, not a defect — the same trap is recorded in
+  `docs/board-navigation-plan.md`.
+- **Never verified here:** a real iPhone (nothing on this page touches
+  transient activation, but `AGENTS.md`'s rule stands that no test here can
+  catch iOS Safari), a real screen reader, and the mark's 0.78 approx opacity in
+  actual sunlight — it measures 3.4:1 against `--bg` in light, over the 3:1
+  floor for a graphic and the weakest ink on the page.
