@@ -634,3 +634,90 @@ export function inferBusSegment(windowEtas, now) {
   }
   return jumpAt === -1 ? null : jumpAt - 1;
 }
+
+/**
+ * One lead timing's epoch milliseconds, or null if it cannot support a claim
+ * about a physical vehicle: absent, unparseable, a timetable estimate
+ * (`monitored !== true`), or more than the tolerance in the past and so stale.
+ *
+ * These are the same four gates `inferBusSegment` spells out inline. It keeps
+ * its own copy on purpose — it is the load-bearing function here and stays
+ * byte-identical — so this one exists to stop the *ladder* growing a third and
+ * fourth spelling: `busMarkPlacement` asks it about the anchor and about every
+ * window lead, and the tests below pin the two readings against each other.
+ *
+ * @param {{estimatedArrival?: string | null, monitored?: boolean} | null | undefined} lead
+ * @param {number} now epoch milliseconds — a parameter, never a clock read
+ * @returns {number | null}
+ */
+function leadTimestamp(lead, now) {
+  if (!lead || lead.monitored !== true || !lead.estimatedArrival) return null;
+  const ts = new Date(lead.estimatedArrival).getTime();
+  if (!Number.isFinite(ts)) return null;
+  if (ts - now < -JUMP_TOLERANCE_MS) return null;
+  return ts;
+}
+
+/**
+ * Where the route page draws its bus mark, as data — the ladder decided here
+ * rather than in the glue, so the one hard question (what the mark is allowed
+ * to claim) is testable without a DOM.
+ *
+ * `leads` is the window's lead buses in route order, furthest upstream first,
+ * anchor **last** — the array `renderWindow` already builds. Rungs are tried
+ * top-down and the first match wins:
+ *
+ * 1. Nothing to read (not an array, or empty) — no mark.
+ * 2. The **anchor** lead fails the validity gates — no mark. The mark's whole
+ *    subject is the bus about to reach the highlighted stop, so if that timing
+ *    is missing, scheduled or stale there is no bus to draw and no row honest
+ *    enough to draw it on; a clean window upstream cannot rescue it.
+ * 3. The anchor lead is at "Arr" (ETA at or before `now`) — `{kind:'anchor'}`.
+ *    This deliberately outranks the segment reading below: a bus reported as
+ *    arriving *is* at the stop, and a mark one segment upstream would argue
+ *    with the "Arr" printed on the same row.
+ * 4. `inferBusSegment` finds exactly one jump — `{kind:'segment', seg}`, the
+ *    only rung that claims a position between two named stops, and the only
+ *    one that licenses dimming the stops behind it.
+ * 5. Every lead passes the gates and there is no jump at all — the bus has not
+ *    entered the window yet, so `{kind:'beyond'}` puts the mark upstream of it.
+ *    This is computed rather than inferred from `inferBusSegment`'s null,
+ *    which covers both "no jump" and "two jumps" and cannot tell them apart.
+ * 6. Anything else with a live anchor — two jumps, or a missing, unmonitored
+ *    or stale lead somewhere upstream — is `{kind:'approx'}`: the bus is
+ *    coming and the window cannot say from where. Admitting that on the anchor
+ *    row is honest; picking the likelier of two jumps would be fiction.
+ *
+ * A single-element `leads` (anchor only — the terminus case, where
+ * `inferBusSegment` bails on `length < 2`) falls through rung 5 with no pair
+ * to compare, which is the right answer: an anchor at "Arr", otherwise a bus
+ * still somewhere upstream of the one stop we can see.
+ *
+ * @param {Array<{estimatedArrival?: string | null, monitored?: boolean} | null | undefined>
+ *   | null | undefined} leads
+ * @param {number} now epoch milliseconds — a parameter, never a clock read
+ * @returns {{kind: 'anchor'} | {kind: 'segment', seg: number} | {kind: 'beyond'}
+ *   | {kind: 'approx'} | null}
+ */
+export function busMarkPlacement(leads, now) {
+  if (!Array.isArray(leads) || leads.length === 0) return null;
+
+  const times = leads.map((lead) => leadTimestamp(lead, now));
+  const anchorTs = times[times.length - 1];
+  if (anchorTs === null || anchorTs === undefined) return null;
+  if (anchorTs - now <= 0) return { kind: 'anchor' };
+
+  const seg = inferBusSegment(leads, now);
+  if (seg !== null) return { kind: 'segment', seg };
+
+  // Not a segment: either nothing rose past the tolerance, or too much did, or
+  // part of the window was never readable. Only the first of those is "beyond".
+  if (times.every((ts) => ts !== null)) {
+    let jumps = 0;
+    for (let k = times.length - 1; k >= 1; k -= 1) {
+      if (times[k - 1] - times[k] > JUMP_TOLERANCE_MS) jumps += 1;
+    }
+    if (jumps === 0) return { kind: 'beyond' };
+  }
+  return { kind: 'approx' };
+}
