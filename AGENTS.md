@@ -116,7 +116,7 @@ convenience for capability, the default answer is no. Concretely:
     backstop for a rider who never presses anything rather than a second thing a
     dismissal has to count up to. A board with no cards teaches nobody, so the gate
     and an empty board show nothing and spend nothing. Losing the key costs at most
-    three showings of one sentence, which is why corrupt state reads as a first
+    five showings of one sentence, which is why corrupt state reads as a first
     visit.
   - `bus-route.anchor.v1` — the route page's remembered boarding stop per
     service, `{"61": "43179", …}`, most recently used last and capped at 30

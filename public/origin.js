@@ -1225,18 +1225,18 @@ export const HINT_COPY =
 export const HINT_DISMISS_LABEL = 'Got it';
 
 /**
- * How many times the tip may appear before it retires itself. Three is the
+ * How many times the tip may appear before it retires itself. Five is the
  * backstop for a rider who never presses anything — the tip is chrome above the
  * arrivals, and chrome that outlives its lesson is just a smaller board.
  */
-export const HINT_MAX_SHOWINGS = 3;
+export const HINT_MAX_SHOWINGS = 5;
 
 /**
  * The tip's showing count as held in storage. Corrupt state reads as a first
  * visit, the same bargain `readOriginRecord` and `readRecents` already make — a
  * broken key must cost a convenience, never the app.
  *
- * Erring towards `{ shown: 0 }` costs at most three showings of one sentence,
+ * Erring towards `{ shown: 0 }` costs at most five showings of one sentence,
  * where erring the other way would silently retire the only teacher the
  * bus-number door has.
  *

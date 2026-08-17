@@ -85,7 +85,7 @@ const RECENT_KEY = 'bus-board.recent.v1';
  * just a smaller board.
  *
  * Nothing about a rider is in here, so it clears with the other four and costs
- * at most three showings of one sentence if it is lost.
+ * at most five showings of one sentence if it is lost.
  */
 const HINT_KEY = 'bus-board.hint.v1';
 
