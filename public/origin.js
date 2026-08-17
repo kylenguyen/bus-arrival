@@ -1215,8 +1215,8 @@ export function isIncoming(bus, now) {
  * and rejected as too loud beside the minutes, so this sentence is the only
  * thing that ever teaches that door exists.
  *
- * One source for the string, imported by `app.js` and pinned by a test, because
- * copy that lives in markup drifts from copy that lives in a test.
+ * One source for the string, imported by `app.js` and `stop.js` and pinned by a
+ * test, because copy that lives in markup drifts from copy that lives in a test.
  */
 export const HINT_COPY =
   'Tap a bus stop for more information. Tap a bus number for where it goes.';
@@ -1225,18 +1225,20 @@ export const HINT_COPY =
 export const HINT_DISMISS_LABEL = 'Got it';
 
 /**
- * How many times the tip may appear before it retires itself. Five is the
+ * How many times the tip may appear before it retires itself. Ten is the
  * backstop for a rider who never presses anything — the tip is chrome above the
- * arrivals, and chrome that outlives its lesson is just a smaller board.
+ * arrivals, and chrome that outlives its lesson is just a smaller board. The
+ * budget is shared by every page that shows the tip (the board and the stop
+ * page both do), under one storage key: it is one lesson, not one per page.
  */
-export const HINT_MAX_SHOWINGS = 5;
+export const HINT_MAX_SHOWINGS = 10;
 
 /**
  * The tip's showing count as held in storage. Corrupt state reads as a first
  * visit, the same bargain `readOriginRecord` and `readRecents` already make — a
  * broken key must cost a convenience, never the app.
  *
- * Erring towards `{ shown: 0 }` costs at most five showings of one sentence,
+ * Erring towards `{ shown: 0 }` costs at most ten showings of one sentence,
  * where erring the other way would silently retire the only teacher the
  * bus-number door has.
  *

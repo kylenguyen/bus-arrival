@@ -86,7 +86,8 @@ const RECENT_KEY = 'bus-board.recent.v1';
  * just a smaller board.
  *
  * Nothing about a rider is in here, so it clears with the other four and costs
- * at most five showings of one sentence if it is lost.
+ * at most ten showings of one sentence if it is lost. The stop page reads and
+ * writes this same key: one lesson, one budget, retired everywhere at once.
  */
 const HINT_KEY = 'bus-board.hint.v1';
 
@@ -1619,7 +1620,7 @@ el.results.addEventListener('click', (event) => {
 // "Got it" retires the tip outright rather than counting one more showing: the
 // rider has said the lesson landed, so `dismissedHintRecord()` jumps straight to
 // the ceiling and it never comes back — on the first showing or the third. The
-// three-showing count is the backstop for someone who never presses anything.
+// ten-showing count is the backstop for someone who never presses anything.
 el.coachDismiss.addEventListener('click', () => {
   el.coach.hidden = true;
   write(HINT_KEY, dismissedHintRecord());

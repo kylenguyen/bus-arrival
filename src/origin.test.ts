@@ -1894,7 +1894,7 @@ describe('readHintRecord', () => {
     assert.deepEqual(origin.readHintRecord(''), { shown: 0 });
   });
 
-  // The cost of guessing wrong here is at most five showings of one sentence,
+  // The cost of guessing wrong here is at most ten showings of one sentence,
   // which is why every unrecognised shape reads as a first visit rather than as
   // a retired tip.
   it('degrades to a first visit for anything that is not an object with a count', () => {
@@ -1919,28 +1919,18 @@ describe('readHintRecord', () => {
 });
 
 describe('hintDecision', () => {
-  it('counts up on each of the five showings and then retires', () => {
+  it('counts up on each of the ten showings and then retires', () => {
     assert.deepEqual(origin.hintDecision({ raw: null, boardHasCards: true }), {
       show: true,
       record: { shown: 1 },
     });
-    assert.deepEqual(origin.hintDecision({ raw: '{"shown":1}', boardHasCards: true }), {
-      show: true,
-      record: { shown: 2 },
-    });
-    assert.deepEqual(origin.hintDecision({ raw: '{"shown":2}', boardHasCards: true }), {
-      show: true,
-      record: { shown: 3 },
-    });
-    assert.deepEqual(origin.hintDecision({ raw: '{"shown":3}', boardHasCards: true }), {
-      show: true,
-      record: { shown: 4 },
-    });
-    assert.deepEqual(origin.hintDecision({ raw: '{"shown":4}', boardHasCards: true }), {
-      show: true,
-      record: { shown: 5 },
-    });
-    assert.deepEqual(origin.hintDecision({ raw: '{"shown":5}', boardHasCards: true }), {
+    for (let shown = 1; shown < 10; shown++) {
+      assert.deepEqual(
+        origin.hintDecision({ raw: `{"shown":${shown}}`, boardHasCards: true }),
+        { show: true, record: { shown: shown + 1 } },
+      );
+    }
+    assert.deepEqual(origin.hintDecision({ raw: '{"shown":10}', boardHasCards: true }), {
       show: false,
       record: null,
     });
@@ -1959,7 +1949,7 @@ describe('hintDecision', () => {
   // point at. `record: null` at every rung is the part that matters: the caller
   // writes only what it is handed, so a suppressed tip cannot burn a showing.
   it('never shows and never writes on a board with no cards', () => {
-    for (const raw of [null, '{"shown":1}', '{"shown":2}', '{"shown":3}', '{"shown":4}', '{"shown":5}']) {
+    for (const raw of [null, '{"shown":1}', '{"shown":4}', '{"shown":7}', '{"shown":9}', '{"shown":10}']) {
       assert.deepEqual(origin.hintDecision({ raw, boardHasCards: false }), {
         show: false,
         record: null,
@@ -1976,7 +1966,7 @@ describe('hintDecision', () => {
   // Decision 3: "Got it" is the rider saying the lesson landed, so it ends the
   // tip in one step from any count, not a "seen once" increment.
   it('is retired in one step by a dismissal, from any starting count', () => {
-    for (const raw of [null, '{"shown":1}', '{"shown":2}', '{"shown":3}', '{"shown":4}']) {
+    for (const raw of [null, '{"shown":1}', '{"shown":4}', '{"shown":7}', '{"shown":9}']) {
       const before = origin.hintDecision({ raw, boardHasCards: true });
       assert.equal(before.show, true);
 
@@ -1992,15 +1982,15 @@ describe('hintDecision', () => {
 describe('dismissedHintRecord', () => {
   it('is the retired state itself, not one more than the last count', () => {
     assert.deepEqual(origin.dismissedHintRecord(), { shown: origin.HINT_MAX_SHOWINGS });
-    assert.deepEqual(origin.dismissedHintRecord(), { shown: 5 });
+    assert.deepEqual(origin.dismissedHintRecord(), { shown: 10 });
   });
 
   // It is stringified into storage and read back by `readHintRecord`, so the
   // round trip has to survive its own JSON.
   it('survives a round trip through readHintRecord', () => {
     const raw = JSON.stringify(origin.dismissedHintRecord());
-    assert.equal(raw, '{"shown":5}');
-    assert.deepEqual(origin.readHintRecord(raw), { shown: 5 });
+    assert.equal(raw, '{"shown":10}');
+    assert.deepEqual(origin.readHintRecord(raw), { shown: 10 });
   });
 });
 
@@ -2021,7 +2011,7 @@ describe('hint copy', () => {
     assert.equal(origin.HINT_DISMISS_LABEL, 'Got it');
   });
 
-  it('retires after five showings', () => {
-    assert.equal(origin.HINT_MAX_SHOWINGS, 5);
+  it('retires after ten showings', () => {
+    assert.equal(origin.HINT_MAX_SHOWINGS, 10);
   });
 });

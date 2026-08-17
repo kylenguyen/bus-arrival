@@ -87,6 +87,18 @@
            lands. Unknown codes keep the skeleton until the guard renders. -->
       <div id="sp-plate"><div class="card sp-plate skeleton" aria-hidden="true"><div class="card-head"><div class="card-title"><span class="sk sk-code"></span><span class="sk sk-name"></span><span class="sk sk-sub"></span></div></div></div></div>
 
+      <!-- The navigation tip, the same element the board's index.html carries
+           and for the same reasons: empty and `hidden` in the markup, filled by
+           stop.js from HINT_COPY and HINT_DISMISS_LABEL in origin.js so the
+           copy has one source. It shares the board's showing budget under one
+           storage key — one lesson, taught wherever the rider happens to be —
+           and sits before #sp-arrivals so a screen reader meets it before the
+           rows it is about. Not a live region, for the reason index.html gives. -->
+      <p class="coach" id="coach" hidden>
+        <span id="coach-text"></span>
+        <button id="coach-dismiss" type="button" class="coach-x">Got it</button>
+      </p>
+
       <!-- The arrivals board for this one stop — or the guard, when the code in
            the URL is not a stop. Skeleton rows at the arrivals grid's own size,
            so nothing jumps when the timings land. Never server-swapped: live

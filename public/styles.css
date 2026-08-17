@@ -891,6 +891,13 @@ input[type='search']::-webkit-search-cancel-button {
   text-wrap: pretty;
 }
 
+/* On the stop page the tip sits directly under the plate card, which carries no
+   margin of its own — on the board, the rows above the coach bring their own
+   bottom margins. 0.75rem is the gap the page's .rt-sec headings keep. */
+.stop-main .coach {
+  margin-top: 0.75rem;
+}
+
 /* Takes the slack and is the only thing allowed to give way, the `#origin-chip`
    bargain again: `min-width: 0` lets the sentence wrap inside the row at 320 px
    instead of a flex item's `min-width: auto` shoving the button off the end. */

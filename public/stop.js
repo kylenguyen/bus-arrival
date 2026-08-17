@@ -4,7 +4,7 @@
 // origin.js and route.js with route-logic.js. Keep new rules on that side of
 // the line.
 //
-// No storage key of its own — two of the board's, and the bargain is stated:
+// No storage key of its own — three of the board's, and the bargain is stated:
 //   bus-board.pins.v1   the pinned stops. The plate's ★ reads and toggles it,
 //                       writing the same {code, description, roadName} rows
 //                       app.js writes — bookmark on this page IS pin on the
@@ -13,8 +13,19 @@
 //                       This page never prompts for a location: a fix fresh
 //                       inside the board's 12 h window draws the chip, anything
 //                       else omits it, and there is no second first-run.
+//   bus-board.hint.v1   the navigation tip's showing count, shared with the
+//                       board: one lesson with one budget, so a showing here
+//                       counts there and "Got it" anywhere retires it
+//                       everywhere.
 
-import { distanceLabel, isUsableCoord } from './origin.js';
+import {
+  HINT_COPY,
+  HINT_DISMISS_LABEL,
+  dismissedHintRecord,
+  distanceLabel,
+  hintDecision,
+  isUsableCoord,
+} from './origin.js';
 import { haversineM } from './route-logic.js';
 import {
   dayTypeFor,
@@ -27,6 +38,7 @@ import {
 
 const PINS_KEY = 'bus-board.pins.v1';
 const LOC_KEY = 'bus-board.loc.v1';
+const HINT_KEY = 'bus-board.hint.v1';
 
 /** app.js's cached-paint ceiling: a fix older than this no longer places the user. */
 const LOC_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -45,6 +57,9 @@ const el = {
   arrivals: document.getElementById('sp-arrivals'),
   sched: document.getElementById('sp-sched'),
   status: document.getElementById('status'),
+  coach: document.getElementById('coach'),
+  coachText: document.getElementById('coach-text'),
+  coachDismiss: document.getElementById('coach-dismiss'),
 };
 
 // --- state ----------------------------------------------------------------
@@ -66,6 +81,8 @@ let liveServices = null;
 let arrivalsFresh = false;
 /** Pending "Copied ✓" reset, so rapid taps do not stack timers. */
 let copiedTimer = 0;
+/** Whether the navigation tip has been decided this page load — app.js's flag. */
+let hintDecided = false;
 
 // --- storage, guarded ------------------------------------------------------
 
@@ -96,6 +113,15 @@ function write(key, value) {
   } catch {
     // Private browsing with storage blocked: the pin works for this page view,
     // it just is not remembered next time.
+  }
+}
+
+/** app.js's readRaw, for the hint key: storage disabled reads as a first visit. */
+function readRaw(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
 }
 
@@ -146,10 +172,35 @@ async function loadStop() {
     // a shell served by the static fallback still ends up correctly named.
     document.title = plateTitle();
     renderAll();
+    maybeShowHint();
     void refreshArrivals();
   } catch {
     renderFailed();
   }
+}
+
+/**
+ * The navigation tip, app.js's maybeShowHint on this page: decided once per
+ * page load, written in the same breath as it is shown, against the same key
+ * and budget the board uses. `boardHasCards` here means "service rows on
+ * screen" — a stop the API knows but serves nothing at has no bus number to
+ * tap, so the tip would teach nobody and burn a shared showing. Called only
+ * from loadStop's ready path, so the guard and failure pages never carry it.
+ */
+function maybeShowHint() {
+  if (hintDecided) return;
+  hintDecided = true;
+
+  const { show, record } = hintDecision({
+    raw: readRaw(HINT_KEY),
+    boardHasCards: data.services.length > 0,
+  });
+  if (!show) return;
+
+  el.coachText.textContent = HINT_COPY;
+  el.coachDismiss.textContent = HINT_DISMISS_LABEL;
+  el.coach.hidden = false;
+  write(HINT_KEY, record);
 }
 
 /** `{code} · {description}, {roadName} · ezbus` — must mirror the server-injected
@@ -604,6 +655,14 @@ function onAction(event) {
 el.plate.addEventListener('click', onAction);
 el.arrivals.addEventListener('click', onAction);
 el.sched.addEventListener('click', onAction);
+
+// "Got it" retires the tip outright, exactly as it does on the board — same
+// key, so a dismissal here ends it there too. The ten-showing count is the
+// backstop for someone who never presses anything.
+el.coachDismiss.addEventListener('click', () => {
+  el.coach.hidden = true;
+  write(HINT_KEY, dismissedHintRecord());
+});
 
 // The guard's code entry. `pattern` + `required` let the browser refuse junk
 // natively before this fires; the regex here is the same strict rule the
