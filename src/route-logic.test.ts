@@ -121,7 +121,7 @@ describe('route-logic.js module contract', () => {
   it('exports the honesty label verbatim', () => {
     assert.equal(
       route.BUS_POSITION_LABEL,
-      'Bus position is read from timings at each stop, not GPS — it can jump.',
+      'Bus position is read from timings at each stop, not GPS — it can jump, and may be approximate.',
     );
   });
 });
@@ -791,5 +791,121 @@ describe('busMarkPlacement', () => {
     assert.equal(route.busMarkPlacement([], NOW), null);
     assert.equal(route.busMarkPlacement(null, NOW), null);
     assert.equal(route.busMarkPlacement(undefined, NOW), null);
+  });
+});
+
+describe('markTarget', () => {
+  // A 20-stop route anchored at 12 gives the real shape: window 8–12, the
+  // terminus kept at 0, and therefore a 7-stop fold covering 1–7 whose
+  // startIndex + count lands exactly on `from`.
+  const stops = Array.from({ length: 20 }, (_, i) => ({ code: String(50000 + i) }));
+  const anchorIdx = 12;
+  const win = route.windowFor(stops, anchorIdx);
+  const from = anchorIdx - win.upstreamCodes.length; // 8
+  const plan = route.foldPlan(stops, win.keepIndices);
+  const foldAbove = plan.find(
+    (row: any) => row.kind === 'fold' && row.startIndex + row.count === from,
+  );
+
+  it('has the fixture the rest of this block assumes', () => {
+    assert.equal(from, 8);
+    assert.deepEqual(foldAbove, { kind: 'fold', count: 7, startIndex: 1 });
+  });
+
+  it('puts a segment on the stop being approached, exactly', () => {
+    assert.deepEqual(route.markTarget({ kind: 'segment', seg: 0 }, plan, from, anchorIdx), {
+      row: { kind: 'stop', index: 9 },
+      approx: false,
+    });
+    // seg 3 is the last gap in a 4-upstream window: the anchor's own row.
+    assert.deepEqual(route.markTarget({ kind: 'segment', seg: 3 }, plan, from, anchorIdx), {
+      row: { kind: 'stop', index: anchorIdx },
+      approx: false,
+    });
+  });
+
+  it('puts anchor and approx on the anchor row, and only approx admits it', () => {
+    assert.deepEqual(route.markTarget({ kind: 'anchor' }, plan, from, anchorIdx), {
+      row: { kind: 'stop', index: anchorIdx },
+      approx: false,
+    });
+    assert.deepEqual(route.markTarget({ kind: 'approx' }, plan, from, anchorIdx), {
+      row: { kind: 'stop', index: anchorIdx },
+      approx: true,
+    });
+  });
+
+  // Rung 5, folded: the fold row above the window is a range already, so a mark
+  // on it claims exactly what is true and takes no approx treatment.
+  it('puts beyond on the fold row immediately above the window', () => {
+    assert.deepEqual(route.markTarget({ kind: 'beyond' }, plan, from, anchorIdx), {
+      row: { kind: 'fold', startIndex: 1 },
+      approx: false,
+    });
+  });
+
+  // The same fold spliced open: its stops are kept, the fold row is gone, and
+  // the last row above the window is stop 7 — which the bus is at *or before*.
+  it('falls back to the stop above the window when that fold is expanded', () => {
+    const expandedPlan = route.foldPlan(stops, [...win.keepIndices, 1, 2, 3, 4, 5, 6, 7]);
+    // The downstream fold survives — only the upstream one is spliced open, and
+    // only that one was ever a candidate.
+    assert.equal(
+      expandedPlan.some((row: any) => row.kind === 'fold' && row.startIndex + row.count === from),
+      false,
+    );
+    assert.deepEqual(route.markTarget({ kind: 'beyond' }, expandedPlan, from, anchorIdx), {
+      row: { kind: 'stop', index: from - 1 },
+      approx: true,
+    });
+  });
+
+  // A gap under FOLD_MIN never produced a fold row in the first place; same
+  // fallback, reached without anyone tapping anything.
+  it('falls back the same way when the gap was too small to fold', () => {
+    const near = 6; // window 2–6, gap 1 leaves stop 1 rendered on its own
+    const nearWin = route.windowFor(stops, near);
+    const nearFrom = near - nearWin.upstreamCodes.length;
+    const nearPlan = route.foldPlan(stops, nearWin.keepIndices);
+    assert.equal(nearFrom, 2);
+    assert.equal(
+      nearPlan.some((row: any) => row.kind === 'fold' && row.startIndex + row.count === nearFrom),
+      false,
+    );
+    assert.deepEqual(route.markTarget({ kind: 'beyond' }, nearPlan, nearFrom, near), {
+      row: { kind: 'stop', index: 1 },
+      approx: true,
+    });
+  });
+
+  // `from === 0`: nothing upstream because there is no route upstream. The
+  // origin terminus is a precise reading, not a fallback, so no approx.
+  it('puts beyond on the origin terminus when the window starts at the route start', () => {
+    const nearAnchor = 3;
+    const zeroWin = route.windowFor(stops, nearAnchor);
+    const zeroFrom = nearAnchor - zeroWin.upstreamCodes.length;
+    assert.equal(zeroFrom, 0);
+    const zeroPlan = route.foldPlan(stops, zeroWin.keepIndices);
+    assert.deepEqual(route.markTarget({ kind: 'beyond' }, zeroPlan, zeroFrom, nearAnchor), {
+      row: { kind: 'stop', index: 0 },
+      approx: false,
+    });
+  });
+
+  // The terminus anchor: one stop in the window, `busMarkPlacement` says
+  // 'beyond', and the anchor row and the origin row are the same row.
+  it('collapses the terminus anchor onto its own row', () => {
+    const termWin = route.windowFor(stops, 0);
+    const termPlan = route.foldPlan(stops, termWin.keepIndices);
+    assert.deepEqual(route.markTarget({ kind: 'beyond' }, termPlan, 0, 0), {
+      row: { kind: 'stop', index: 0 },
+      approx: false,
+    });
+  });
+
+  it('draws nothing without a placement, or with one it does not know', () => {
+    assert.equal(route.markTarget(null, plan, from, anchorIdx), null);
+    assert.equal(route.markTarget(undefined, plan, from, anchorIdx), null);
+    assert.equal(route.markTarget({ kind: 'nonsense' }, plan, from, anchorIdx), null);
   });
 });

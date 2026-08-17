@@ -48,9 +48,15 @@ export const ANCHOR_LRU_MAX = 30;
  * say so — a refresh that re-reads the timings can legitimately move the mark
  * backwards, and an unlabelled mark doing that reads as a broken app rather
  * than an honest estimate.
+ *
+ * "May be approximate" is the second admission, and it is not the same one:
+ * jumping is what a *precise* mark does between refreshes, while the ladder's
+ * `beyond` and `approx` rungs draw a mark that was never precise to begin with
+ * — it names the row the bus is at or before, not the gap it is in. A rider who
+ * has only been warned about jumping would read those as claims of position.
  */
 export const BUS_POSITION_LABEL =
-  'Bus position is read from timings at each stop, not GPS — it can jump.';
+  'Bus position is read from timings at each stop, not GPS — it can jump, and may be approximate.';
 
 /** The service-number rule the server enforces on /api/route/:service. */
 const SERVICE_RE = /^[A-Za-z0-9]{1,5}$/;
@@ -720,4 +726,64 @@ export function busMarkPlacement(leads, now) {
     if (jumps === 0) return { kind: 'beyond' };
   }
   return { kind: 'approx' };
+}
+
+/**
+ * Which spine row carries the mark, and whether it may claim to be exact.
+ *
+ * The companion to `busMarkPlacement`: that one decides what the timings
+ * support, this one decides where the fold plan can actually put it. They are
+ * separate because the answer to the second depends on what the *user* has
+ * spliced open, which is not a fact about any bus.
+ *
+ * `plan` is `foldPlan`'s output, `from` the index of the window's first stop
+ * (`anchorIdx − upstreamCodes.length`). Rows come back as the plan's own row
+ * identity — `{kind:'stop', index}` or `{kind:'fold', startIndex}` — so the
+ * renderer matches rather than counts.
+ *
+ * `approx` is the "and may be approximate" half of `BUS_POSITION_LABEL`: true
+ * where the mark names a row the bus is at *or before*, rather than the gap it
+ * sits in. Three placements earn it:
+ *
+ * - `approx` itself, on the anchor row — the window cannot say from where.
+ * - `beyond` when the stops above the window are shown individually (a gap
+ *   under `FOLD_MIN`, or a fold the user expanded): the mark lands on stop
+ *   `from − 1` because that is the last row there is, not because the bus is
+ *   there. A fold row is exempt for the mirror-image reason — "8 stops" is
+ *   already a range, so a mark on it claims exactly what is true.
+ *
+ * `beyond` with `from === 0` is exempt too, and is the one case that looks like
+ * an exception and is not: there is no row above the origin terminus because
+ * there is no *route* above it, so "at or before stop 0" is a precise reading —
+ * the bus has not left the terminus.
+ *
+ * @param {{kind: string, seg?: number} | null | undefined} placement `busMarkPlacement`'s answer
+ * @param {Array<{kind: string, index?: number, count?: number, startIndex?: number}>
+ *   | null | undefined} plan `foldPlan`'s rows
+ * @param {number} from index of the window's first stop
+ * @param {number} anchorIdx index of the anchor stop
+ * @returns {{row: {kind: 'stop', index: number} | {kind: 'fold', startIndex: number},
+ *   approx: boolean} | null}
+ */
+export function markTarget(placement, plan, from, anchorIdx) {
+  if (!placement) return null;
+  const rows = Array.isArray(plan) ? plan : [];
+
+  switch (placement.kind) {
+    case 'segment':
+      // The stop being approached — the gap between it and the one before it.
+      return { row: { kind: 'stop', index: from + placement.seg + 1 }, approx: false };
+    case 'anchor':
+      return { row: { kind: 'stop', index: anchorIdx }, approx: false };
+    case 'approx':
+      return { row: { kind: 'stop', index: anchorIdx }, approx: true };
+    case 'beyond': {
+      const fold = rows.find((row) => row.kind === 'fold' && row.startIndex + row.count === from);
+      if (fold) return { row: { kind: 'fold', startIndex: fold.startIndex }, approx: false };
+      if (from <= 0) return { row: { kind: 'stop', index: 0 }, approx: false };
+      return { row: { kind: 'stop', index: from - 1 }, approx: true };
+    }
+    default:
+      return null;
+  }
 }

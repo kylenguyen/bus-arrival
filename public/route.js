@@ -12,15 +12,22 @@
 //                         written on a successful fix from this page's location
 //                         door, the same {lat, lon, at} shape app.js writes
 
-import { formatMetres, isUsableCoord, originCoord, readOriginRecord } from './origin.js';
+import {
+  formatMetres,
+  isIncoming,
+  isUsableCoord,
+  originCoord,
+  readOriginRecord,
+} from './origin.js';
 import {
   arrivalsParams,
   BUS_POSITION_LABEL,
+  busMarkPlacement,
   directionFor,
   filterServiceEta,
   foldPlan,
   haversineM,
-  inferBusSegment,
+  markTarget,
   parseServicePath,
   readAnchors,
   rememberAnchor,
@@ -30,6 +37,7 @@ import {
   UPSTREAM_WINDOW,
   windowFor,
 } from './route-logic.js';
+import { VEHICLE, vehicleIcon } from './vehicle-marks.js';
 
 const ANCHOR_KEY = 'bus-route.anchor.v1';
 const ORIGIN_KEY = 'bus-board.origin.v1';
@@ -492,6 +500,32 @@ function panelServices(code, now) {
     </li></ul>`;
 }
 
+/**
+ * The anchor's lead bus, drawn exactly as the board draws it — same module,
+ * same markup, so a rider reads one silhouette for one vehicle on both pages
+ * and the two cannot drift apart.
+ *
+ * A `type` we were never sent falls back to the single-deck body under a plain
+ * "Bus" label. That is a deliberate divergence from the board, where a blank
+ * `type` draws nothing at all: there the mark is a footnote to a service number
+ * and can simply be absent, but here the mark *is* the position, and one that
+ * vanished would say the bus had gone rather than that its deck count is
+ * unknown. So it draws the plainest body available and, by relabelling, claims
+ * no deck count — "Bus", not "Single deck bus".
+ *
+ * `Object.hasOwn` rather than a plain lookup because `VEHICLE` is an object
+ * literal: an upstream `type` of `constructor` would otherwise resolve through
+ * the prototype to a function and take the fallback away.
+ */
+function busMarkIcon(lead, now) {
+  const type = typeof lead?.type === 'string' ? lead.type : '';
+  const art = Object.hasOwn(VEHICLE, type)
+    ? VEHICLE[type]
+    : { ...VEHICLE.SD, title: 'Bus', label: 'Bus' };
+  // Trails on the board's rule and no other: isIncoming in origin.js.
+  return vehicleIcon(art, isIncoming(lead, now));
+}
+
 function renderWindow() {
   const current = currentWindow();
   if (!current?.win) return;
@@ -511,28 +545,51 @@ function renderWindow() {
     const buses = filterServiceEta(arrivalsByCode.get(code), serviceNo);
     return Array.isArray(buses) ? (buses[0] ?? null) : null;
   });
-  // The mark only when the timings support exactly one bus in one place;
-  // inferBusSegment answers null for everything ambiguous, and null means no mark.
-  const seg = arrivalsFresh ? inferBusSegment(leads, now) : null;
-  const markIdx = seg === null ? -1 : from + seg + 1;
+  // What the timings support, then which row can carry it. Both rules live in
+  // route-logic.js; stale arrivals are the ladder's top rung and belong here,
+  // because nothing on screen is a timing yet.
+  const placement = arrivalsFresh ? busMarkPlacement(leads, now) : null;
+  const target = markTarget(placement, plan, from, anchorIdx);
+
+  // Built once, emitted on exactly one row. `approx` marks the placements that
+  // name a row the bus is at *or before* rather than a gap it sits in — the
+  // title is the only thing on the page that can say so, since the drawing is
+  // the board's and stays identical by construction.
+  const mark = target
+    ? `<span class="bus-mark${target.approx ? ' bus-mark-approx' : ''}"${
+        target.approx ? ' title="Approaching — exact position unknown"' : ''
+      }>${busMarkIcon(leads[leads.length - 1], now)}</span>`
+    : '';
+  // Rows ask by their own plan identity rather than by counting, so a row that
+  // is not the target cannot accidentally match one that is.
+  const markOn = (kind, key) => {
+    if (!target || target.row.kind !== kind) return '';
+    const at = kind === 'stop' ? target.row.index : target.row.startIndex;
+    return at === key ? mark : '';
+  };
 
   const rowFor = (row) => {
     if (row.kind === 'fold') {
+      // The mark sits inside the `li` and outside the `button`: a fold row is a
+      // range, which is exactly what a bus upstream of the window is, but the
+      // whole row is the "show" target and a mark inside it would make the
+      // silhouette part of the label.
       return `<li class="fold"><button type="button" class="fold-btn"
         data-fold="${row.startIndex}" data-count="${row.count}">
-        <b>${row.count} stops</b> — show</button></li>`;
+        <b>${row.count} stops</b> — show</button>${markOn('fold', row.startIndex)}</li>`;
     }
     const index = row.index;
     const stop = stops[index];
-    const classes = [];
+    const classes = ['row'];
     if (index === 0 || index === stops.length - 1) classes.push('term');
     const inWin = index >= from && index < anchorIdx;
-    const passed = seg !== null && inWin && index - from <= seg;
+    // Only a segment placement licenses dimming: it is the one rung that claims
+    // the bus is past these stops. `beyond` and `approx` say the opposite or
+    // say nothing, and greying a stop on either would be an invented fact.
+    const passed = placement?.kind === 'segment' && inWin && index - from <= placement.seg;
     if (passed) classes.push('passed');
     if (index === anchorIdx) classes.push('here');
 
-    const mark =
-      index === markIdx ? '<span class="bus-mark" aria-hidden="true">🚌</span>' : '';
     let right = '';
     if (inWin && !passed) right = etaInline(leads[index - from], now);
     else if (!inWin && index !== anchorIdx && index !== 0 && index !== stops.length - 1) {
@@ -544,7 +601,14 @@ function renderWindow() {
             stop.description,
           )}</strong></a>`
         : escape(stop.description);
-    return `<li class="${classes.join(' ')}">${mark}${right}${name}</li>`;
+    // Name first and the right-hand group after it: the row is a flex line now,
+    // not the old float, so source order is reading order and the mark is
+    // genuinely the last thing on it. The group is omitted when empty rather
+    // than left as a bare span, which would spend the row's gap on nothing.
+    const end = `${right}${markOn('stop', index)}`;
+    return `<li class="${classes.join(' ')}"><span class="row-name">${name}</span>${
+      end ? `<span class="row-end">${end}</span>` : ''
+    }</li>`;
   };
 
   // The spine splits at the anchor so the here-panel sits between the halves.

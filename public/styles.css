@@ -1290,7 +1290,7 @@ input[type='search']::-webkit-search-cancel-button {
      instead of a few pixels inside it.
 
      Every viewBox is cropped to include the empty band the trails drift through
-     (see `trail()` in app.js), and that band is on the left — so the box's left
+     (see `trail()` in vehicle-marks.js), and that band is on the left — so the box's left
      edge is not the drawing's, and aligning boxes left the *bus* looking indented
      under the number. The gutter is 7 user units on the double decker and 6.5 on
      the other two, which at this height is 0.23rem and 0.27rem; one shared 0.25rem
@@ -1308,9 +1308,10 @@ input[type='search']::-webkit-search-cancel-button {
    the bus is on its way, which is the whole point of putting them there — the mark describes
    the next arrival, not the route.
 
-   Only that mark, though: `isIncoming` in origin.js hands `app.js` the verdict and `app.js`
-   puts `is-incoming` on the `<svg>`. See the note above `VEHICLE` in app.js for why. Trails
-   on every mark made the drift a property of the page rather than of any arrival on it.
+   Only that mark, though: `isIncoming` in origin.js hands the renderer the verdict and the
+   renderer puts `is-incoming` on the `<svg>` — `app.js` on the board, `route.js` on the
+   route page's position mark. See the note above `VEHICLE` in vehicle-marks.js for why.
+   Trails on every mark made the drift a property of the page rather than of any arrival.
 
    Two things here are load-bearing and neither is obvious:
 
@@ -1770,9 +1771,15 @@ a.card-link {
 
 /* --- the spine ---
    A vertical run of stops. Nodes are squares drawn with borders — set-square,
-   like everything else here — and the rail is a 2px line behind them. The
-   floats put codes, ETAs and chevrons on the right edge; they are emitted
-   *before* the stop name in the markup so a wrapping name never drops them. */
+   like everything else here — and the rail is a 2px line behind them.
+
+   Anchored rows (`.row`, from `rowFor`) are a flex line: name, then the
+   right-hand group of ETA-or-code and the bus mark. They used to float the
+   right-hand pieces and emit them before the name so a wrapping name could not
+   drop them; the mark ended that bargain, because a name wrapping *under* a
+   silhouette is worse than a name cut short, so the name truncates instead and
+   source order is free to be reading order. Picker rows (`.pick`) keep their
+   own flex with `order`, which is why their chevron is still emitted first. */
 .spine {
   list-style: none;
   margin: 0;
@@ -1815,6 +1822,41 @@ a.card-link {
   border: 2px solid var(--muted);
 }
 
+/* One anchored stop: the name takes the room, the right-hand group keeps it. */
+.spine li.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* `min-width: 0` is the whole rule, and it is not optional: a flex item's
+   default `min-width: auto` is its min-content width, which for a line that
+   will not wrap is the entire stop name — so the item refuses to shrink, shoves
+   the ETA and the mark off the end, and the row overflows the page sideways.
+   Zeroed, the name is the only thing on the line that gives, and the three
+   properties below can do their job.
+
+   `text-overflow` needs all three on the same box, which is why the name is
+   wrapped in a span at all: the anchor row's content is an `<a><strong>`, and
+   those are inline descendants whose text overflows this box rather than
+   boxes that could carry an ellipsis themselves. */
+.spine li.row .row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* `flex: none`, so the answer — minutes, or the code, or the bus — is never
+   what shrinks. Reading it is why the row exists; the name is context. */
+.spine li.row .row-end {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+}
+
 .spine li.term {
   font-weight: 700;
 }
@@ -1845,8 +1887,15 @@ a.card-link {
 }
 
 /* A fold: the rail goes dashed where stops are hidden, and the row is one
-   full-width button so "show" is a thumb target, not a phrase. */
+   full-width button so "show" is a thumb target, not a phrase.
+
+   Flex because the bus mark can land here — a bus upstream of the window has no
+   stop row of its own, and "8 stops" is already the range it is somewhere
+   inside. The mark is a sibling of the button, never a child: the button is the
+   tap target and a silhouette inside it would be read out as part of "show". */
 .spine li.fold {
+  display: flex;
+  align-items: center;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -1864,6 +1913,10 @@ a.card-link {
 .fold-btn {
   display: block;
   width: 100%;
+  /* Still the whole row when nothing sits beside it, and the thing that gives
+     when the mark does — same bargain as `.row-name` one rule up. */
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 2.75rem;
   padding: 0;
   border: 0;
@@ -1888,16 +1941,15 @@ a.card-link {
   display: none;
 }
 
+/* Both live inside `.row-end` now, so the float and the padding that nudged it
+   onto the name's line are gone — the flex line centres them for free. */
 .spine .stop-code {
-  float: right;
-  padding-top: 0.2rem;
   color: var(--muted);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }
 
 .spine .eta-inline {
-  float: right;
   font-size: 0.85rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -1917,16 +1969,34 @@ a.card-link {
   vertical-align: middle;
 }
 
-/* The inferred bus. Absolutely placed at the top edge of the row it is
-   approaching, so it reads as *between* two stops — which is all the timings
-   can actually support (see BUS_POSITION_LABEL). No animation: a mark that is
-   inference, not telemetry, has not earned motion. */
+/* The inferred bus, drawn with the board's own silhouettes (`vehicle-marks.js`)
+   and therefore styled by the board's own `.tag-icon`/`.tag-svg` above — size,
+   colour, trails and the reduced-motion rule all arrive already decided, which
+   is the point of sharing the module rather than the artwork. This wrapper does
+   nothing but seat it in the flex line, so there is no second place for the two
+   pages' marks to disagree.
+
+   It used to be a bus emoji hung off the row's top edge to read as *between*
+   two stops. What that bought in precision it spent on being a different drawing
+   from the one the same bus has on the board, floating in the rail's gutter
+   where the eye reads structure rather than content; inline right, it lands
+   where every other answer on the row already is. The gap between two stops is
+   now carried by which row the mark sits on plus the dimming behind it. */
 .spine .bus-mark {
-  position: absolute;
-  left: 1.05rem;
-  top: -0.55rem;
-  font-size: 0.8rem;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+/* A placement that names the row the bus is at *or before*, rather than the gap
+   it sits in — `markTarget`'s `approx`. Muted the same step `.eta.scheduled`
+   uses for a timing that is a timetable rather than a tracking: the house sign
+   for "this is the honest reading, not the confident one". The `title` carries
+   the sentence; this is only what stops the mark asserting as loudly as an
+   exact one. Not lower — the drawing is already `--muted` and 0.7rem, and the
+   sunlight floor is a floor. */
+.spine .bus-mark-approx {
+  opacity: 0.78;
 }
 
 /* Picker rows: every stop a tap target. The chevron is the affordance. */
