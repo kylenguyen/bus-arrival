@@ -680,3 +680,116 @@ describe('inferBusSegment', () => {
     assert.equal(route.inferBusSegment(null, NOW), null);
   });
 });
+
+describe('busMarkPlacement', () => {
+  // Same fixture shape as inferBusSegment above: lead timings in route order,
+  // furthest upstream first, anchor last.
+  const eta = (secs: number, monitored = true): any => ({
+    estimatedArrival: new Date(NOW + secs * 1000).toISOString(),
+    monitored,
+  });
+
+  // Rung 3. "Arr" is the anchor's own claim to the bus, and it outranks any
+  // segment reading the window might also support.
+  it('marks the anchor when its lead has arrived', () => {
+    assert.deepEqual(route.busMarkPlacement([eta(600), eta(720), eta(-30)], NOW), {
+      kind: 'anchor',
+    });
+    // The boundary: exactly due counts as arrived, not as 0 s away.
+    assert.deepEqual(route.busMarkPlacement([eta(600), eta(720), eta(0)], NOW), {
+      kind: 'anchor',
+    });
+    // ...and it wins over the clean single jump in the same window.
+    assert.deepEqual(route.busMarkPlacement([eta(600), eta(720), eta(800), eta(-30)], NOW), {
+      kind: 'anchor',
+    });
+  });
+
+  // Rung 2. Past the tolerance the anchor timing is stale rather than arrived,
+  // and a mark drawn from it would be claiming a bus nobody is tracking.
+  it('draws nothing when the anchor timing has gone stale', () => {
+    assert.equal(route.busMarkPlacement([eta(600), eta(720), eta(-120)], NOW), null);
+  });
+
+  // Rung 4, mirroring the inferBusSegment cases so the two readings stay in
+  // step: the same windows, wrapped.
+  it('places a segment at the single clean jump', () => {
+    assert.deepEqual(
+      route.busMarkPlacement([eta(600), eta(720), eta(800), eta(180), eta(300)], NOW),
+      { kind: 'segment', seg: 2 },
+    );
+    assert.deepEqual(
+      route.busMarkPlacement([eta(500), eta(560), eta(620), eta(700), eta(90)], NOW),
+      { kind: 'segment', seg: 3 },
+    );
+  });
+
+  // Rung 5. Every stop still sees the same vehicle — the timings shrink
+  // walking upstream from the anchor, with nothing rising past the tolerance —
+  // so it has not entered the window yet. Same fixture as inferBusSegment's
+  // no-jump case, where the answer is null for a reason this rung must not
+  // confuse with the two-jump one below.
+  it('puts the mark beyond the window when nothing has jumped', () => {
+    assert.deepEqual(
+      route.busMarkPlacement([eta(100), eta(180), eta(240), eta(300), eta(360)], NOW),
+      { kind: 'beyond' },
+    );
+  });
+
+  // Rung 6. inferBusSegment answers null for both of the next two, and the
+  // ladder must not read that as "beyond".
+  it('degrades to approx on two jumps', () => {
+    assert.deepEqual(
+      route.busMarkPlacement([eta(600), eta(900), eta(800), eta(180), eta(300)], NOW),
+      { kind: 'approx' },
+    );
+  });
+
+  it('degrades to approx when an upstream lead is unreadable', () => {
+    // Unmonitored — a timetable estimate cannot place a vehicle.
+    assert.deepEqual(
+      route.busMarkPlacement([eta(600), eta(720, false), eta(800), eta(180), eta(300)], NOW),
+      { kind: 'approx' },
+    );
+    // Missing entirely — that stop's fetch failed or the service is not on it.
+    assert.deepEqual(
+      route.busMarkPlacement([eta(600), null, eta(800), eta(180), eta(300)], NOW),
+      { kind: 'approx' },
+    );
+    // Stale upstream, live anchor: only the *anchor* going stale is a null.
+    assert.deepEqual(
+      route.busMarkPlacement([eta(600), eta(-200), eta(800), eta(180), eta(300)], NOW),
+      { kind: 'approx' },
+    );
+  });
+
+  // Rung 2 again, from the other side: the anchor is the mark's whole subject,
+  // so a clean window upstream cannot rescue an unusable anchor timing.
+  it('draws nothing when the anchor lead itself is unusable', () => {
+    const clean = [eta(600), eta(720), eta(800)];
+    assert.equal(route.busMarkPlacement([...clean, eta(180, false)], NOW), null);
+    assert.equal(route.busMarkPlacement([...clean, null], NOW), null);
+    assert.equal(
+      route.busMarkPlacement([...clean, { estimatedArrival: null, monitored: true }], NOW),
+      null,
+    );
+    assert.equal(
+      route.busMarkPlacement([...clean, { estimatedArrival: 'nope', monitored: true }], NOW),
+      null,
+    );
+  });
+
+  // The terminus case: one stop in the window and nothing to compare it with.
+  // T3 maps 'beyond' here onto the origin-terminus row.
+  it('handles a single-element window', () => {
+    assert.deepEqual(route.busMarkPlacement([eta(300)], NOW), { kind: 'beyond' });
+    assert.deepEqual(route.busMarkPlacement([eta(-30)], NOW), { kind: 'anchor' });
+    assert.equal(route.busMarkPlacement([eta(300, false)], NOW), null);
+  });
+
+  it('draws nothing with nothing to read', () => {
+    assert.equal(route.busMarkPlacement([], NOW), null);
+    assert.equal(route.busMarkPlacement(null, NOW), null);
+    assert.equal(route.busMarkPlacement(undefined, NOW), null);
+  });
+});
