@@ -343,6 +343,24 @@ in effect now, so read them **over** the body of this document.
    - `.spine .bus-mark .tag-svg { margin-left: 0 }` survives for the same reason
      it was added, one gap over: the trail gutter now faces the separator.
 
+3. **(17 Aug 2026, later) The segment mark names the stop last arrived at, not
+   the stop being approached.** The ladder's rung 4 row is now `from + seg` —
+   the lower stop of the inferred gap — where the plan (and the table above)
+   says `from + seg + 1`. The mark now reads "the bus is at, or departing, this
+   stop", which is the convention the maintainer asked for.
+
+   Knock-ons, all in [public/route.js](../public/route.js)'s `renderWindow`:
+   the `passed` dimming is strictly *behind* the mark (`< seg`, was `<= seg`)
+   so the marked row keeps full colour and the silhouette — `currentColor` ink —
+   does not grey out with it; the marked row's inline ETA stays suppressed on
+   the old `<= seg` bound, because that stop's lead is already the *next*
+   vehicle. The approx title is "On its way — exact position unknown" (was
+   "Approaching — …"): under the new convention a mark titled "approaching" on
+   the anchor row would claim the bus reached it. Rungs `anchor`, `beyond` and
+   the terminus cases are unchanged — they already meant "at or before this
+   row". The segment mark can no longer land on the anchor row (max `seg` puts
+   it at `anchorIdx − 1`); only the `anchor`/`approx` rungs draw there now.
+
 ### Notes for whoever picks this up next
 
 - **Stock mock routes are 1–3 stops long**, so no rung below `anchor` can be

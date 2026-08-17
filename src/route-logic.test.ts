@@ -812,14 +812,15 @@ describe('markTarget', () => {
     assert.deepEqual(foldAbove, { kind: 'fold', count: 7, startIndex: 1 });
   });
 
-  it('puts a segment on the stop being approached, exactly', () => {
+  it('puts a segment on the stop the bus last arrived at, exactly', () => {
     assert.deepEqual(route.markTarget({ kind: 'segment', seg: 0 }, plan, from, anchorIdx), {
-      row: { kind: 'stop', index: 9 },
+      row: { kind: 'stop', index: from },
       approx: false,
     });
-    // seg 3 is the last gap in a 4-upstream window: the anchor's own row.
+    // seg 3 is the last gap in a 4-upstream window: the stop just above the
+    // anchor — the anchor row itself is the anchor/approx rungs' alone now.
     assert.deepEqual(route.markTarget({ kind: 'segment', seg: 3 }, plan, from, anchorIdx), {
-      row: { kind: 'stop', index: anchorIdx },
+      row: { kind: 'stop', index: anchorIdx - 1 },
       approx: false,
     });
   });

@@ -561,12 +561,15 @@ function renderWindow() {
   const target = markTarget(placement, plan, from, anchorIdx);
 
   // Built once, emitted on exactly one row. `approx` marks the placements that
-  // name a row the bus is at *or before* rather than a gap it sits in — the
-  // title is the only thing on the page that can say so, since the drawing is
-  // the board's and stays identical by construction.
+  // name a row the bus is at *or before* rather than a stop it is at or
+  // departing — the title is the only thing on the page that can say so, since
+  // the drawing is the board's and stays identical by construction. "On its
+  // way", not "approaching this stop": the same title serves the anchor-row
+  // approx and the expanded-fold beyond fallback, and neither may claim the
+  // bus reached the row it sits on.
   const mark = target
     ? `<span class="bus-mark${target.approx ? ' bus-mark-approx' : ''}"${
-        target.approx ? ' title="Approaching — exact position unknown"' : ''
+        target.approx ? ' title="On its way — exact position unknown"' : ''
       }>${busMarkIcon(leads[leads.length - 1])}</span>`
     : '';
   // Rows ask by their own plan identity rather than by counting, so a row that
@@ -601,12 +604,18 @@ function renderWindow() {
     // Only a segment placement licenses dimming: it is the one rung that claims
     // the bus is past these stops. `beyond` and `approx` say the opposite or
     // say nothing, and greying a stop on either would be an invented fact.
-    const passed = placement?.kind === 'segment' && inWin && index - from <= placement.seg;
+    // Strictly *behind* the mark, not at it — the marked row is the stop the
+    // bus is at or departing, and dimming it would grey the mark's own row.
+    // The ETA still goes with the mark, not the dimming: the marked stop's
+    // lead is already the *next* vehicle, and printing that beside the bus
+    // would read as the bus it sits next to.
+    const behindOrAt = placement?.kind === 'segment' && inWin && index - from <= placement.seg;
+    const passed = behindOrAt && index - from < placement.seg;
     if (passed) classes.push('passed');
     if (index === anchorIdx) classes.push('here');
 
     let right = '';
-    if (inWin && !passed) right = etaInline(leads[index - from], now);
+    if (inWin && !behindOrAt) right = etaInline(leads[index - from], now);
     else if (!inWin && index !== anchorIdx && index !== 0 && index !== stops.length - 1) {
       right = `<span class="stop-code">${escape(stop.code)}</span>`;
     }

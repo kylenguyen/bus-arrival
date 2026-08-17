@@ -52,8 +52,9 @@ export const ANCHOR_LRU_MAX = 30;
  * "May be approximate" is the second admission, and it is not the same one:
  * jumping is what a *precise* mark does between refreshes, while the ladder's
  * `beyond` and `approx` rungs draw a mark that was never precise to begin with
- * — it names the row the bus is at or before, not the gap it is in. A rider who
- * has only been warned about jumping would read those as claims of position.
+ * — it names the row the bus is at or before, not the stop it is at or
+ * departing. A rider who has only been warned about jumping would read those
+ * as claims of position.
  */
 export const BUS_POSITION_LABEL =
   'Bus position is read from timings at each stop, not GPS — it can jump, and may be approximate.';
@@ -742,8 +743,8 @@ export function busMarkPlacement(leads, now) {
  * renderer matches rather than counts.
  *
  * `approx` is the "and may be approximate" half of `BUS_POSITION_LABEL`: true
- * where the mark names a row the bus is at *or before*, rather than the gap it
- * sits in. Three placements earn it:
+ * where the mark names a row the bus is at *or before*, rather than the stop
+ * it is at or departing. Three placements earn it:
  *
  * - `approx` itself, on the anchor row — the window cannot say from where.
  * - `beyond` when the stops above the window are shown individually (a gap
@@ -771,8 +772,9 @@ export function markTarget(placement, plan, from, anchorIdx) {
 
   switch (placement.kind) {
     case 'segment':
-      // The stop being approached — the gap between it and the one before it.
-      return { row: { kind: 'stop', index: from + placement.seg + 1 }, approx: false };
+      // The stop last arrived at — the lower stop of the inferred gap, so the
+      // mark reads "at or departing here" rather than "on its way here".
+      return { row: { kind: 'stop', index: from + placement.seg }, approx: false };
     case 'anchor':
       return { row: { kind: 'stop', index: anchorIdx }, approx: false };
     case 'approx':
