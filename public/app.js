@@ -539,7 +539,14 @@ function renderTags(bus, now) {
   const tags = [];
   // An unrecognised code from upstream, or none at all, simply matches nothing and draws
   // nothing. That silence used to be a single decker's too and is now its own answer.
-  const vehicle = VEHICLE[bus.type];
+  //
+  // `Object.hasOwn` and not a plain lookup, because `VEHICLE` is an object literal: a
+  // `type` of `constructor`, `__proto__` or `toString` resolves through the prototype to
+  // something truthy that is not a vehicle, and `vehicleIcon` then destructures no trail
+  // pair out of it and throws, taking the whole card down. Unreachable with the SD/DD/BD/
+  // blank DataMall sends today; guarded because the route page's mark of the same shape
+  // is, and one of the two being safe is an accident waiting to be tidied the wrong way.
+  const vehicle = Object.hasOwn(VEHICLE, bus.type) ? VEHICLE[bus.type] : null;
   if (vehicle) tags.push(vehicleIcon(vehicle, isIncoming(bus, now)));
   return tags.length > 0 ? `<span class="service-tags">${tags.join('')}</span>` : '';
 }
