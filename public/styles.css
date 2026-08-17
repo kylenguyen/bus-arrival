@@ -1988,6 +1988,21 @@ a.card-link {
   flex: none;
 }
 
+/* The one thing the board's mark styling does *not* carry over. `.tag-svg`'s
+   -0.25rem is an alignment for a mark that sits at the left of its column,
+   under the service number: it pulls the empty trail gutter out of the way so
+   the bus body lines up with the number's edge, and it spends that quarter-rem
+   on the card's own padding, which is empty.
+
+   Here the mark is the last thing on the row and the gutter faces the ETA, so
+   the same pull spends itself on the 0.35rem between them — 5.6px of gap, 4px
+   of it eaten, leaving the trails all but touching the "min". Zeroed, the gap
+   in `.row-end` is the gap on screen. Nothing is aligned to the mark's left on
+   this page, so there is nothing here for the pull to buy. */
+.spine .bus-mark .tag-svg {
+  margin-left: 0;
+}
+
 /* A placement that names the row the bus is at *or before*, rather than the gap
    it sits in — `markTarget`'s `approx`. Muted the same step `.eta.scheduled`
    uses for a timing that is a timetable rather than a tracking: the house sign
