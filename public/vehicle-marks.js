@@ -62,6 +62,11 @@
  * that says "now", and outside it the mark is the plain silhouette it was always taken for.
  * So their absence is an answer too, and the drift is what a rider's eye is caught by on the
  * one row that has earned it.
+ *
+ * That is the *board's* rule, and it stays the board's: the route page's position mark passes
+ * `incoming: true` unconditionally (`busMarkIcon` in route.js). This module takes the flag and
+ * never decides it, which is exactly what lets one page read the trails as "arriving soon" and
+ * the other as "this bus is running" off the same drawing.
  */
 export const VEHICLE = {
   DD: {

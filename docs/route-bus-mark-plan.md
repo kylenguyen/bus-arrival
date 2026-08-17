@@ -1,8 +1,10 @@
 # Implementation plan: route-page bus position mark
 
-Status: **approved 17 Aug 2026, implemented 17 Aug 2026.** Read the
-[task status](#task-status) and the divergences below before trusting the body
-of this document.
+Status: **approved 17 Aug 2026, implemented 17 Aug 2026, amended 17 Aug 2026.**
+Read the [task status](#task-status), the divergences and the
+[post-approval changes](#post-approval-changes-17-aug-2026-after-t4) below before
+trusting the body of this document — the mark's position on the row and its trail
+rule are both different from what is described here.
 
 ## Feature
 
@@ -288,6 +290,58 @@ live smoke was run against `tools/stub-datamall.mjs` instead.
    -0.25rem` aligns a mark that sits at the *left* of its column; inline right
    of an ETA it eats 4px of the 5.6px gap and puts the trails against the "min".
    Cancelled for `.spine .bus-mark` only — `5db4a16`.
+
+### Post-approval changes (17 Aug 2026, after T4)
+
+Two rider-facing decisions were reversed once the feature was on screen. Both are
+in effect now, so read them **over** the body of this document.
+
+1. **The route mark's trails always animate, whatever the ETA.** The plan (and
+   the "Agreed judgment calls" above) had them follow the board's `isIncoming`
+   rule — drift only inside 3 minutes. `busMarkIcon` in
+   [public/route.js](../public/route.js) now passes `incoming: true`
+   unconditionally, and `isIncoming` is no longer imported there.
+
+   The argument the board's rule rests on does not transfer. On a card the mark
+   is a footnote to a service number, so nine of them drifting at once said
+   nothing about any one arrival — the drift had to be earned. Here there is
+   exactly one mark and it *is* a vehicle on the road: the drift says "this bus
+   is running", which is as true at 30 minutes as at 3, and a still silhouette
+   sitting on a route line reads as a bus that has stopped rather than as one
+   that is merely far away. One mark cannot make a page pulse, which is the cost
+   the board's rule exists to avoid.
+
+   **The board is untouched**, deliberately and by construction:
+   `vehicle-marks.js` still takes the flag and never decides it, so `app.js`'s
+   rule is exactly what it was — verified by re-reading the board's marks after
+   the change (trails present iff lead ETA ≤ 3 min, 30 marks).
+   `prefers-reduced-motion` is unaffected: the trails hold still at full ink, as
+   they always did.
+
+2. **The mark sits immediately after the stop name, not at the row's right end.**
+   The plan's point 3 and divergence 7 both describe it inline *right*, after the
+   ETA. It is now the first thing after the name, left-aligned, with a hairline
+   `--border` separator holding the two apart.
+
+   Out at the right edge it had become one more column of the ETA's, so "where is
+   the bus" was a scan across every row's ragged right end — and the answer it
+   gives is about the *stop*, which is on the left. Butted against the name it is
+   read in the same glance as the row it makes a claim about, and the marked row
+   is findable by running an eye down one column. The separator is load-bearing
+   rather than decorative: without it the silhouette reads as punctuation on the
+   stop name, worst on a truncated name where it lands just after the ellipsis.
+
+   Consequences, all measured at 390 px and 320 px:
+   - `.row-name` is `flex: 0 1 auto` (was `1 1 auto`) so the name no longer
+     stretches the mark away from itself, and `.row-end` takes `margin-left:
+     auto` to keep the right edge. Long names still truncate with an ellipsis and
+     nothing overflows sideways.
+   - The marked **fold** row's button stops being the full row width, or the mark
+     would sit at the right edge again. `rowFor` puts a `fold-marked` class on
+     that one `li`; every other fold row keeps the full-width tap target. The
+     marked one measures 94 × 44 px — the whole label, at the same height.
+   - `.spine .bus-mark .tag-svg { margin-left: 0 }` survives for the same reason
+     it was added, one gap over: the trail gutter now faces the separator.
 
 ### Notes for whoever picks this up next
 

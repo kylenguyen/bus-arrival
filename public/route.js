@@ -14,7 +14,6 @@
 
 import {
   formatMetres,
-  isIncoming,
   isUsableCoord,
   originCoord,
   readOriginRecord,
@@ -501,9 +500,10 @@ function panelServices(code, now) {
 }
 
 /**
- * The anchor's lead bus, drawn exactly as the board draws it — same module,
- * same markup, so a rider reads one silhouette for one vehicle on both pages
- * and the two cannot drift apart.
+ * The anchor's lead bus, drawn from the board's own artwork — same module, same
+ * markup, so a rider reads one silhouette for one vehicle on both pages and the
+ * two cannot drift apart. Two things about it are decided here rather than
+ * inherited, and both are below.
  *
  * A `type` we were never sent falls back to the single-deck body under a plain
  * "Bus" label. That is a deliberate divergence from the board, where a blank
@@ -516,14 +516,23 @@ function panelServices(code, now) {
  * `Object.hasOwn` rather than a plain lookup because `VEHICLE` is an object
  * literal: an upstream `type` of `constructor` would otherwise resolve through
  * the prototype to a function and take the fallback away.
+ *
+ * The trails are the second deliberate divergence, and it is the same argument
+ * as the first: `incoming` is hard `true` here, never `isIncoming`. On the board
+ * a mark sits under a service number as a fleet fact, so the drift has to earn
+ * itself by the bus being three minutes out — otherwise nine cards drift at once
+ * and say nothing. Here there is exactly one mark and it *is* a bus on the road:
+ * the drift says "this vehicle is running", which is true at 3 minutes and at 30
+ * alike, and the only alternative reading of a still silhouette on a route line
+ * is a bus that has stopped. The board's rule is untouched — this is the one
+ * caller that opts out of it.
  */
-function busMarkIcon(lead, now) {
+function busMarkIcon(lead) {
   const type = typeof lead?.type === 'string' ? lead.type : '';
   const art = Object.hasOwn(VEHICLE, type)
     ? VEHICLE[type]
     : { ...VEHICLE.SD, title: 'Bus', label: 'Bus' };
-  // Trails on the board's rule and no other: isIncoming in origin.js.
-  return vehicleIcon(art, isIncoming(lead, now));
+  return vehicleIcon(art, true);
 }
 
 function renderWindow() {
@@ -558,7 +567,7 @@ function renderWindow() {
   const mark = target
     ? `<span class="bus-mark${target.approx ? ' bus-mark-approx' : ''}"${
         target.approx ? ' title="Approaching — exact position unknown"' : ''
-      }>${busMarkIcon(leads[leads.length - 1], now)}</span>`
+      }>${busMarkIcon(leads[leads.length - 1])}</span>`
     : '';
   // Rows ask by their own plan identity rather than by counting, so a row that
   // is not the target cannot accidentally match one that is.
@@ -574,9 +583,15 @@ function renderWindow() {
       // range, which is exactly what a bus upstream of the window is, but the
       // whole row is the "show" target and a mark inside it would make the
       // silhouette part of the label.
-      return `<li class="fold"><button type="button" class="fold-btn"
+      //
+      // `fold-marked` is what lets the button stop being the full row width. It
+      // is a class rather than a `:has()` in the stylesheet because the renderer
+      // already knows the answer, and this is the only row on the page whose tap
+      // target changes shape.
+      const marked = markOn('fold', row.startIndex);
+      return `<li class="fold${marked ? ' fold-marked' : ''}"><button type="button" class="fold-btn"
         data-fold="${row.startIndex}" data-count="${row.count}">
-        <b>${row.count} stops</b> — show</button>${markOn('fold', row.startIndex)}</li>`;
+        <b>${row.count} stops</b> — show</button>${marked}</li>`;
     }
     const index = row.index;
     const stop = stops[index];
@@ -601,14 +616,19 @@ function renderWindow() {
             stop.description,
           )}</strong></a>`
         : escape(stop.description);
-    // Name first and the right-hand group after it: the row is a flex line now,
-    // not the old float, so source order is reading order and the mark is
-    // genuinely the last thing on it. The group is omitted when empty rather
-    // than left as a bare span, which would spend the row's gap on nothing.
-    const end = `${right}${markOn('stop', index)}`;
-    return `<li class="${classes.join(' ')}"><span class="row-name">${name}</span>${
-      end ? `<span class="row-end">${end}</span>` : ''
-    }</li>`;
+    // Name, then the mark, then the row's own right-hand answer. The mark left
+    // the `.row-end` group on purpose: out at the right edge it read as one more
+    // column of the ETA's, and a rider scanning the rail for *where the bus is*
+    // had to cross the whole row to find it. Butted against the name it is read
+    // with the stop it belongs to, in one saccade, and the marked row is findable
+    // down the left of the list rather than by scanning the ragged right. The
+    // separator in the stylesheet is what keeps it from looking like punctuation
+    // on the name. The `.row-end` group is still omitted when empty rather than
+    // left as a bare span, which would spend the row's gap on nothing.
+    return `<li class="${classes.join(' ')}"><span class="row-name">${name}</span>${markOn(
+      'stop',
+      index,
+    )}${right ? `<span class="row-end">${right}</span>` : ''}</li>`;
   };
 
   // The spine splits at the anchor so the here-panel sits between the halves.
