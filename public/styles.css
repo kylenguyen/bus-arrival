@@ -1212,6 +1212,40 @@ input[type='search']::-webkit-search-cancel-button {
   background: var(--surface-2);
 }
 
+/* Board only: the pin rides the head's top-right corner instead of sitting in the flex
+   row. As a flex sibling it reserved its 2.75rem column for the head's full height,
+   which boxed the meta line in — with the code demoted to `.card-sub`'s last item, a
+   name-length road plus the walk plate wrapped it onto a third line on most phones.
+   Out of flow, `.card-sub` runs the full plate width and only the name clears the
+   button (see `#board .card-name` below).
+
+   `top: -0.15rem` centres the star on the name line: head padding (0.6rem) plus half
+   the 1.25rem name line, less half the 2.75rem target. The sliver of target that pokes
+   past the head is clipped by `.card`'s `overflow: hidden` and was never over anything.
+   The accepted corner case: a meta line long enough to reach the last 2.4rem ends under
+   the target's lower half, so a tap there toggles the pin. The sub line is not itself
+   tappable and a pin is one tap to undo, which is a better bargain than wrapping every
+   long meta line to protect a rare mis-tap.
+
+   Scoped to `#board`: the stop page plate keeps its pin in flex flow beside a taller,
+   three-line title, where the column costs nothing. */
+#board .card-head {
+  position: relative;
+}
+
+#board .card-head .pin {
+  position: absolute;
+  top: -0.15rem;
+  right: 0.45rem;
+  margin: 0;
+}
+
+/* Clears the button's full 2.75rem target, not just the 1.2rem glyph it draws — name
+   text running under the transparent target would hand a stop-page tap to the pin. */
+#board .card-name {
+  padding-right: 2.4rem;
+}
+
 /* --- arrivals table ---
    Four columns shared by the heading row and every service row: the service
    number, then the next three buses. The first bus is the widest because it is the
@@ -1638,6 +1672,12 @@ input[type='search']::-webkit-search-cancel-button {
   .sk-row {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  /* The head's side padding steps up to 1rem here; the corner pin keeps sitting
+     0.35rem past it, so the name's 2.4rem clearance holds at both widths. */
+  #board .card-head .pin {
+    right: 0.65rem;
   }
 }
 

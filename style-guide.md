@@ -131,11 +131,25 @@ Rules:
 The head is a filled plate (`--surface-2`) and reads top-down as:
 
 ```
-Opp Blk 123 ›                            ← .card-name   1rem/650, the recognised thing
+Opp Blk 123 ›                        ☆   ← .card-name   1rem/650, the recognised thing;
+                                            the pin rides the name line, top-right
 Ang Mo Kio Ave 3 [180 m · 2 min walk] · 43179
-                                         ← .card-sub, one even 0.78rem muted line;
-                                            the code is always its last item
+                                         ← .card-sub, one even 0.78rem muted line, the
+                                            full plate width; the code is always its
+                                            last item
 ```
+
+**The pin belongs to the name line, not to the head** (Aug 2026, in the same demotion).
+On the board it is absolutely positioned in the head's top-right corner, centred on the
+name line, rather than sitting in the head's flex row: as a flex sibling it reserved a
+2.75rem column for the head's full height, which boxed the meta line in and wrapped the
+code onto a third line for any name-length road. Only `.card-name` clears the button —
+the full 2.75rem target, not just the glyph — and `.card-sub` runs the whole plate
+width. The accepted trade-off: a meta line long enough to reach the last 2.4rem ends
+under the target's lower half, where a tap toggles the pin — reversible in one tap,
+where the wrapped line it replaces was a cost on every render. Scoped to `#board`; the
+stop page plate keeps its pin in flex flow beside a three-line title, where the column
+costs nothing.
 
 **The name leads (again — Aug 2026, reversing the 2025 inversion).** Rider feedback: the
 board is read constantly and the pole matched rarely; the name and road are what riders

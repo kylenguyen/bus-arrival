@@ -56,4 +56,22 @@ describe('board head demotion', () => {
       'the demoted look must attach to .card-sub .meta-code, never to the base rule',
     );
   });
+
+  // The meta line owns the full plate width only because the pin left the head's
+  // flex row: in flow, the button reserves its 2.75rem column for the whole head
+  // height and the code wraps onto a third line. The rule must stay #board-scoped —
+  // hoisting it to bare .card-head would tear the stop page plate's pin out of the
+  // flex row it still lives in beside a three-line title.
+  it('keeps the board pin out of the head flow, scoped to the board', () => {
+    assert.match(
+      cssSource,
+      /#board \.card-head \.pin \{[^}]*position: absolute;[^}]*\}/,
+      'the corner pin must be #board-scoped absolute — the sp-plate pin stays in flex flow',
+    );
+    assert.match(
+      cssSource,
+      /#board \.card-name \{[^}]*padding-right:[^}]*\}/,
+      'the name must clear the corner pin, or line one runs under the tap target',
+    );
+  });
 });
