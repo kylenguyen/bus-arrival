@@ -434,14 +434,26 @@ function renderBody() {
 
 // --- the approach window --------------------------------------------------------
 
-/** One upstream stop's inline ETA: pulsing until the batch lands, then minutes. */
+/**
+ * One upstream stop's inline ETA: pulsing until the batch lands, then minutes.
+ *
+ * An expired timing reads "due", not "arr" — deliberately diverging from the
+ * board and the anchor panel, which keep "Arr". Those answer the boarding
+ * question ("go to the platform now") with nothing beside them to argue with.
+ * A spine row sits next to the position mark, which can honestly place the bus
+ * *upstream* of a stop whose prediction has run out; "arr" there claims an
+ * arrival the mark contradicts, while "due" claims only that the timing has
+ * passed — true whether the bus is at the stop or still a bend away.
+ */
 function etaInline(lead, now) {
   if (!arrivalsFresh) {
     return '<span class="eta-inline"><span class="sk sk-eta-in skeleton"></span></span>';
   }
   if (!lead || !lead.estimatedArrival) return '';
   const mins = minutesUntil(lead.estimatedArrival, now);
-  if (mins <= 0) return '<span class="eta-inline">arr</span>';
+  if (mins <= 0) {
+    return '<span class="eta-inline" title="Timing has passed — bus may still be approaching">due</span>';
+  }
   return `<span class="eta-inline">${mins}<span class="eta-unit">min</span></span>`;
 }
 
