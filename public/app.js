@@ -437,7 +437,6 @@ const SKELETON_CARD = `
   <article class="card skeleton" aria-hidden="true">
     <div class="card-head">
       <div class="card-title">
-        <span class="sk sk-code"></span>
         <span class="sk sk-name"></span>
         <span class="sk sk-sub"></span>
       </div>
@@ -623,12 +622,12 @@ function renderShells() {
         <div class="card-head">
           <div class="card-title">
             <a class="card-link" href="/stop/${escape(stop.code)}">
-              <span class="meta-code">${escape(stop.code)}</span>
-              <span class="card-name">${escape(stop.description)}<span class="card-chev" aria-hidden="true">›</span></span>
+              <span class="card-name">${escape(stop.description)}<span class="visually-hidden"> (${escape(stop.code)})</span><span class="card-chev" aria-hidden="true">›</span></span>
             </a>
             <span class="card-sub">
               ${stop.roadName ? `<span class="meta-where">${escape(stop.roadName)}</span>` : ''}
               ${distance ? `<span class="meta-dist">${escape(distance)}</span>` : ''}
+              <span class="meta-code" aria-hidden="true">${stop.roadName || distance ? '· ' : ''}${escape(stop.code)}</span>
             </span>
           </div>
           <button class="pin" type="button" data-pin="${escape(stop.code)}"

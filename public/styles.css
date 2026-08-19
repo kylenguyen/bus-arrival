@@ -1012,9 +1012,11 @@ input[type='search']::-webkit-search-cancel-button {
   align-items: center;
 }
 
-/* Three bars now, not two: the head grew a stencilled code above the name, and a
-   placeholder that skipped it would let the board jump a line as each card resolves.
-   The heights are the real elements' — 1.5rem code, 0.95rem name, 0.78rem sub. */
+/* The bar count follows the head it stands in for, or the board jumps a line as each
+   card resolves: two bars on the board (name, sub — the code lives inside the sub line
+   now), three on the stop page plate, where the code still leads. The heights are the
+   real elements'. `.sk-code` is the stop page's bar; the board's skeleton no longer
+   carries one. */
 .sk-code {
   width: 32%;
   height: 1.5rem;
@@ -1024,6 +1026,14 @@ input[type='search']::-webkit-search-cancel-button {
   width: 55%;
   height: 0.95rem;
   margin-top: 0.35rem;
+}
+
+/* The board's name bar at the board's name size, and first in its head — the margin
+   above it belonged to the code bar that is no longer there. Scoped to `#board` because
+   the stop page skeleton keeps the three-bar shape above. */
+#board .sk-name {
+  height: 1rem;
+  margin-top: 0;
 }
 
 .sk-sub {
@@ -1095,12 +1105,13 @@ input[type='search']::-webkit-search-cancel-button {
   min-width: 0;
 }
 
-/* The code leads now, and the description follows it. That is an inversion of what
-   shipped, and the argument for it is the shelter: a rider standing at a pole is
-   matching a five-digit number printed on it, and "Opp Blk 123" is how the stop is
-   described afterwards rather than how it is identified. On a board of eight cards the
-   number is also the only field guaranteed unique — two stops on the same road routinely
-   share a description.
+/* The pole-size code. This rule is the stop page's now: on /stop/:code the five digits
+   are the headline, matched against the plate the reader is standing at, and `.sp-plate
+   .meta-code` inherits everything here except the size it enlarges. On the board the
+   code no longer wears this rule — riders told us they read the board constantly and
+   match the pole rarely, so there the markup moves the code into `.card-sub` and the
+   positional rule below takes over. Do not fold the two together: this one is 1.5rem
+   stencil wherever a code still leads a head.
 
    `line-height: 1` and a hair of positive tracking: this is the one place the stencil
    face is set large, and at 1.5rem Archivo Narrow's default leading opens a gap between
@@ -1115,11 +1126,32 @@ input[type='search']::-webkit-search-cancel-button {
   font-variant-numeric: tabular-nums;
 }
 
+/* Demoted: on the board the code trails the meta line, last, after the walk plate. That
+   reverses the 2025 inversion above, on rider feedback: the name and road are how a stop
+   is recognised, and the loudest type on a card should be an arrival, not the header.
+   The accepted trade-off is slower pole-matching, mitigated by position — the code is
+   always the meta line's final item. It is still the only field guaranteed unique, which
+   is why it is demoted and not deleted, and it stays in the card link's accessible name.
+   System face, not stencil: at 0.78rem the system stack wins (see the `--display` token's
+   comment). Colour is inherited from `.card-sub`'s `--muted`; tabular figures are
+   inherited from the base rule above. */
+.card-sub .meta-code {
+  display: inline;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+/* Leads the head now, half a step up from the 0.95rem it wore under the code — big
+   enough to be the recognised thing, still under the service number (1.15rem) and the
+   ETA (1.25rem). The margin the name carried under the code moves to `.sp-plate
+   .card-name`, where a code still sits above it. */
 .card-name {
   display: block;
-  margin-top: 0.1rem;
+  margin-top: 0;
   font-weight: 650;
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -2420,6 +2452,9 @@ a.card-link {
 
 .sp-plate .card-name {
   font-size: 1.05rem;
+  /* The gap under the code. The board's `.card-name` dropped this when its code moved
+     into the meta line; here the code is still above the name, so the air stays. */
+  margin-top: 0.1rem;
 }
 
 .sp-plate .card-head {

@@ -89,10 +89,11 @@ Two faces, and the split is a rule rather than a taste.
 
 - **Archivo Narrow 700** (SIL OFL, self-hosted at
   `public/fonts/archivo-narrow-700.woff2`, 11.9 KB Latin subset) is used **only where a
-  number is matched against something physical**: the stop code on the pole
-  (`.meta-code`), the service number on the front of the bus (`.service-no`), and the
-  wordmark. Condensed also buys width where the grid is tightest — `--col-service` is
-  3.6rem and has to hold `966B`.
+  number is matched against something physical**: the stop code on the pole — the stop
+  page's `.meta-code`, not the board's, whose demoted code rides `.card-sub` in the
+  system face (see Card anatomy) — the service number on the front of the bus
+  (`.service-no`), and the wordmark. Condensed also buys width where the grid is
+  tightest — `--col-service` is 3.6rem and has to hold `966B`.
 - **The system stack** (`--sans`) takes everything else, including every ETA. That is
   deliberate: the ETA is the fastest-read number on the page and the platform UI face is
   better at small sizes than any webfont. It also keeps the display face away from
@@ -130,20 +131,26 @@ Rules:
 The head is a filled plate (`--surface-2`) and reads top-down as:
 
 ```
-43179                 ← .meta-code   1.5rem Archivo Narrow, the identifier
-Opp Blk 123           ← .card-name   0.95rem, the description
-Ang Mo Kio Ave 3 [180 m · 2 min walk]   ← .card-sub / .meta-dist
+Opp Blk 123 ›                            ← .card-name   1rem/650, the recognised thing
+Ang Mo Kio Ave 3 [180 m · 2 min walk] · 43179
+                                         ← .card-sub, one even 0.78rem muted line;
+                                            the code is always its last item
 ```
 
-**The code leads, and that is an inversion of what the product shipped with.** A rider at
-a pole is matching a five-digit number printed on it; the description is how the stop is
-described afterwards, not how it is identified. The code is also the only field
-guaranteed unique — two stops on the same road routinely share a description. Do not put
-the name back on top.
+**The name leads (again — Aug 2026, reversing the 2025 inversion).** Rider feedback: the
+board is read constantly and the pole matched rarely; the name and road are what riders
+recognise, and the loudest type on a card should be an arrival, not the header. The code
+is demoted, not deleted — it is still the only field guaranteed unique (two stops on the
+same road routinely share a description), so it stays on every card: muted, system face,
+always the meta line's last item, and still in the card link's accessible name as a
+`.visually-hidden` "(code)". The accepted trade-off is slower pole-matching. On
+`/stop/:code` the 2025 argument still wins — there the code **is** the headline, and
+`.sp-plate` keeps it at pole size on top of the plate.
 
-`.card-head` and `.skeleton .card-head` must stay in step: the skeleton carries three
-bars because the head has three lines, and its bars are filled with `--border` rather
-than `--surface-2` because the head *is* `--surface-2` and same-on-same is invisible.
+`.card-head` and `.skeleton .card-head` must stay in step: the skeleton's bar count
+follows the head's line count — two bars on the board, three on the stop page plate,
+where the code still leads. The bars are filled with `--border` rather than
+`--surface-2` because the head *is* `--surface-2` and same-on-same is invisible.
 
 ## Motion
 
